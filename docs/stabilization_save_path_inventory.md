@@ -16,7 +16,7 @@ guesswork.
 | Area | Function / path | Table | Current shape | Alias status | Risk |
 | --- | --- | --- | --- | --- | --- |
 | Picking tab main save | `saveToSheet` | `picking`, `shortage` | `toPickingDbRow`, `toShortageDbRow` | Applied | Low |
-| Picking memo save | `saveMemo` | `picking` | Direct literal row with `memo` | Candidate after memo adapter | Low-medium |
+| Picking memo save | `saveMemo` | `picking` | `toPickingDbRow` identity fields plus `memo` | Applied | Low |
 | CS status save | `persistMisongStatus` | `shortage` | Direct literal shortage status row | Candidate after CS row alias | Medium |
 | CS arrival date | `updateArrivalDate` | `shortage` | Direct field update | Keep direct for now | Medium |
 | CS shortage edit | `updateCSShortage` | `picking` | Direct literal picking row | Candidate after CS row alias | Medium |
@@ -31,9 +31,8 @@ guesswork.
 
 1. Add `toInspectionDbRow` without wiring it.
 2. Add small alias builders for CS/misong rows without changing writes.
-3. Convert `saveMemo` first because it only updates `picking.memo`.
-4. Convert `updateCSShortage` picking row next.
-5. Leave hard deletes and inspection status transitions until staging tables are live.
+3. Convert `updateCSShortage` picking row next.
+4. Leave hard deletes and inspection status transitions until staging tables are live.
 
 ## Do Not Touch Yet
 

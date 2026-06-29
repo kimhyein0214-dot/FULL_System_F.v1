@@ -2542,9 +2542,21 @@ function saveMemo(invNo,code,val){
   const item=findOrderItemByStateCode(order,code);
   const prod=isValidOwnCode(item?.prodCode||item?.resolvedOwnCode) ? (item.prodCode||item.resolvedOwnCode) : '';
   if(!item?.code||!prod) return;
-  // TODO(stabilization-save-alias): route this memo row through a picking save adapter after memo support is added.
+  const memoRow=toPickingDbRow({
+    invoiceNo:inv_no,
+    sellpiaOrderNo:ord_no_m,
+    sellpiaItemNo:item.itemNo||item.code,
+    itemSortOrder:item.itemSortOrder??null,
+    sellpiaPCode:item.sellpiaCode||'',
+    ownCode:prod
+  });
+  delete memoRow.is_checked;
+  delete memoRow.shortage_qty;
+  delete memoRow.drawer_no;
+  delete memoRow.hold;
+  memoRow.memo=val||'';
   upsertOrReplaceByItem('picking',
-    {inv_no,ord_no:ord_no_m,item_no:item.itemNo||item.code,item_sort_order:item.itemSortOrder??null,sellpia_p_code:item.sellpiaCode||'',p_code:prod,memo:val||''},
+    memoRow,
     {inv_no,item_no:item.itemNo||item.code}
   ).catch(()=>{});
 }
