@@ -5900,9 +5900,17 @@ function insp_saveMemo(invNo,code,val){
     const ord_no=order?.ordNo||order?.ord_no||noMap[seq_no]?.ord_no||noMap[invNo]?.ord_no||inv_no;
     const item_no=String(code||'').trim();
     if(!item_no){ _saveQueue.delete(saveKey); return; }
-    // TODO(stabilization-save-alias): introduce toInspectionDbRow before changing inspection memo keys.
+    const memoUpdatedAt=new Date().toISOString();
+    const inspectionMemoRow=toInspectionDbRow({
+      invoiceNo:inv_no,
+      sellpiaOrderNo:ord_no,
+      sellpiaItemNo:item_no,
+      ownCode:code,
+      inspectionMemo:val||'',
+      memoUpdatedAt
+    });
     db.from('inspection').upsert(
-      {inv_no,ord_no,item_no,p_code:code,insp_memo:val||'',memo_updated_at:new Date().toISOString()},
+      inspectionMemoRow,
       {onConflict:'inv_no,p_code'}
     ).then(({error})=>{
       if(error) throw error;
