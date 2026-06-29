@@ -117,8 +117,17 @@
 (function(){
   (async function SellpiaMemoUpdater0608(){
     const CONFIG = {
+      appEnv: 'stabilization',
+      allowProductionWrites: false,
+      productionProjectRef: 'vgxocngpykhlkosiaeew',
       supabaseUrl: 'https://vgxocngpykhlkosiaeew.supabase.co',
       supabaseKey: 'sb_publishable_XVnKGJo66GZiYTq5Ivu8dA_SjBVvX0g',
+      tables: {
+        orders: 'orders',
+        orderItems: 'order_items',
+        picking: 'picking',
+        shortage: 'shortage'
+      },
       searchTimeout: 9000,
       detailTimeout: 9000,
       ajaxDelay: 250
@@ -156,7 +165,22 @@
     function postgrestIn(values) {
       return uniq(values).map(v => encodeURIComponent(v)).join(',');
     }
+    function dbTable(name) {
+      return (CONFIG.tables && CONFIG.tables[name]) || name;
+    }
+    function isProductionDbTarget() {
+      return String(CONFIG.supabaseUrl || '').includes(CONFIG.productionProjectRef || 'vgxocngpykhlkosiaeew');
+    }
+    function assertDbWriteAllowed(table, operation) {
+      const resolved = dbTable(table);
+      if (CONFIG.allowProductionWrites) return resolved;
+      if (isProductionDbTarget()) {
+        throw new Error(`안정화 repo에서는 운영 DB 쓰기가 차단되었습니다: ${resolved}.${operation}`);
+      }
+      return resolved;
+    }
     async function dbRequestIn(table, column, values, select, chunkSize = 70) {
+      table = dbTable(table);
       const uniqueValues = uniq(values);
       const rows = [];
       for (let i = 0; i < uniqueValues.length; i += chunkSize) {
@@ -181,8 +205,10 @@
       throw new Error(lastError ? lastError.message : '대기 시간이 초과되었습니다.');
     };
     async function dbRequest(path) {
+      const method = 'GET';
+      if (method !== 'GET') assertDbWriteAllowed(String(path || '').split('?')[0], method);
       const res = await fetch(CONFIG.supabaseUrl + '/rest/v1/' + path, {
-        method: 'GET',
+        method,
         headers: {
           apikey: CONFIG.supabaseKey,
           Authorization: 'Bearer ' + CONFIG.supabaseKey,
@@ -195,6 +221,7 @@
       return text ? JSON.parse(text) : [];
     }
     async function dbRowsByInvoiceOrOrder(table, invNo, ordNo, select) {
+      table = dbTable(table);
       const inv = encodeURIComponent(invNo || '');
       const ord = encodeURIComponent(ordNo || '');
       try {
@@ -948,10 +975,10 @@
         const typeFilter = normal(filters.itemType || 'ALL').toUpperCase();
         let orderRows = [];
         try {
-          orderRows = await dbRequest(`orders?ord_date=eq.${encodeURIComponent(date)}&select=ord_no,inv_no,am_pm,seller`);
+          orderRows = await dbRequest(`${dbTable('orders')}?ord_date=eq.${encodeURIComponent(date)}&select=ord_no,inv_no,am_pm,seller`);
         } catch (err) {
           addLog(`  DB fallback(orders date): ${err.message.slice(0, 80)}`);
-          orderRows = await dbRequest(`orders?ord_date=eq.${encodeURIComponent(date)}&select=ord_no,am_pm`);
+          orderRows = await dbRequest(`${dbTable('orders')}?ord_date=eq.${encodeURIComponent(date)}&select=ord_no,am_pm`);
         }
         if (sessionFilter !== 'ALL') {
           orderRows = orderRows.filter(row => normal(row.am_pm).toUpperCase() === sessionFilter);
@@ -1057,17 +1084,17 @@
       const d1 = d1Obj.toISOString().slice(0, 10).replace(/-/g, '');
       let shortageRows;
       try {
-        shortageRows = await dbRequest(`shortage?ord_no=gte.${d0}&ord_no=lt.${d1}&select=inv_no,ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val,is_gold`);
+        shortageRows = await dbRequest(`${dbTable('shortage')}?ord_no=gte.${d0}&ord_no=lt.${d1}&select=inv_no,ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val,is_gold`);
       } catch (err) {
         addLog(`  DB fallback(shortage date): ${err.message.slice(0, 80)}`);
-        shortageRows = await dbRequest(`shortage?ord_no=gte.${d0}&ord_no=lt.${d1}&select=ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val`);
+        shortageRows = await dbRequest(`${dbTable('shortage')}?ord_no=gte.${d0}&ord_no=lt.${d1}&select=ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val`);
       }
       if (!shortageRows.length) return [];
       const ordNos = uniq(shortageRows.map(row => row.ord_no));
       const orderMeta = new Map();
       if (ordNos.length) {
         try {
-          const orderRows = await dbRequest(`orders?ord_no=in.(${postgrestIn(ordNos)})&select=ord_no,am_pm`);
+          const orderRows = await dbRequest(`${dbTable('orders')}?ord_no=in.(${postgrestIn(ordNos)})&select=ord_no,am_pm`);
           (orderRows || []).forEach(row => orderMeta.set(normal(row.ord_no), { amPm: normal(row.am_pm).toUpperCase() }));
         } catch (err) {
           addLog(`  DB fallback(orders filter): ${err.message.slice(0, 80)}`);
@@ -1091,10 +1118,10 @@
       let pickingRows = [];
       if (filteredOrdNos.length) {
         try {
-          pickingRows = await dbRequest(`picking?ord_no=in.(${postgrestIn(filteredOrdNos)})&select=inv_no,ord_no,hold,drawer_no`);
+          pickingRows = await dbRequest(`${dbTable('picking')}?ord_no=in.(${postgrestIn(filteredOrdNos)})&select=inv_no,ord_no,hold,drawer_no`);
         } catch (err) {
           addLog(`  DB fallback(picking date): ${err.message.slice(0, 80)}`);
-          pickingRows = await dbRequest(`picking?ord_no=in.(${postgrestIn(filteredOrdNos)})&select=ord_no,hold,drawer_no`);
+          pickingRows = await dbRequest(`${dbTable('picking')}?ord_no=in.(${postgrestIn(filteredOrdNos)})&select=ord_no,hold,drawer_no`);
         }
       }
       const byOrd = new Map();
