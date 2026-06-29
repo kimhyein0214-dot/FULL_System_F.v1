@@ -17,20 +17,20 @@ guesswork.
 | --- | --- | --- | --- | --- | --- |
 | Picking tab main save | `saveToSheet` | `picking`, `shortage` | `toPickingDbRow`, `toShortageDbRow` | Applied | Low |
 | Picking memo save | `saveMemo` | `picking` | `toPickingDbRow` identity fields plus `memo` | Applied | Low |
-| CS status save | `persistMisongStatus` | `shortage` | Direct literal shortage status row | Candidate after CS row alias | Medium |
+| CS status save | `persistMisongStatus` | `shortage` | Direct literal shortage status row | `normalizeCsMisongRow` added, not wired | Medium |
 | CS arrival date | `updateArrivalDate` | `shortage` | Direct field update | Keep direct for now | Medium |
-| CS shortage edit | `updateCSShortage` | `picking` | Direct literal picking row | Candidate after CS row alias | Medium |
+| CS shortage edit | `updateCSShortage` | `picking` | Direct literal picking row | `normalizeCsMisongRow` added, not wired | Medium |
 | CS direct CSV upload | `uploadCSDirectData` | `shortage` | Minimal direct row | Needs dedicated adapter | Medium |
 | CS cleanup | `cleanSelectedCSDone`, `deleteMisongRow`, `cleanMisongDone` | `shortage` | Hard delete | Hold until soft-delete decision | High |
 | Inspection item memo | `insp_saveMemo` | `inspection` | `toInspectionDbRow` memo fields | Applied | Low-medium |
 | Inspection done marker | `toggleInspectionDone` | `inspection` | Direct `__done__` marker | Hold until inspection key strategy | Medium-high |
 | Inspection status transitions | `toggleInspectionDone` | `shortage`, `picking` | Direct status/hold updates | Hold, semantics sensitive | High |
-| Misong picking shortage | `saveMisongShortage` | `picking`, `shortage` | Direct literal rows | Candidate after status semantics split | Medium-high |
+| Misong picking shortage | `saveMisongShortage` | `picking`, `shortage` | Direct literal rows | `normalizeCsMisongRow` added, not wired | Medium-high |
 
 ## Next Safe Refactor Order
 
-1. Add small alias builders for CS/misong rows without changing writes.
-2. Convert `updateCSShortage` picking row next.
+1. Convert `updateCSShortage` picking row through `normalizeCsMisongRow` and `toPickingDbRow`.
+2. Keep `persistMisongStatus` and `saveMisongShortage` direct until staging write tests.
 3. Leave hard deletes and inspection status transitions until staging tables are live.
 
 ## Do Not Touch Yet

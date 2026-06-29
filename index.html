@@ -1421,6 +1421,29 @@ function normalizeInspectionRow(row={}){
     memoUpdatedAt:String(row.memo_updated_at||'')
   };
 }
+function normalizeCsMisongRow(row={},overrides={}){
+  const ownCandidate=overrides.ownCode??row.prodCode??row.resolvedOwnCode??row.dispCode??row.p_code??row.code??'';
+  const ownCode=overrides.ownCode!==undefined
+    ? String(overrides.ownCode||'').trim()
+    : (isValidOwnCode(ownCandidate)?String(ownCandidate).trim():'');
+  const isGoldValue=overrides.isGold!==undefined
+    ? !!overrides.isGold
+    : !!(row.isGold||row.is_gold||row.is14k==='Y'||isGold(row));
+  return {
+    raw:row,
+    invoiceNo:String(overrides.invoiceNo??row.invNo??row.inv_no??row.inv??''),
+    sellpiaOrderNo:String(overrides.sellpiaOrderNo??row.ordNo??row.ord_no??''),
+    sellpiaItemNo:String(overrides.sellpiaItemNo??row.itemNo??row.item_no??row.code??''),
+    itemSortOrder:overrides.itemSortOrder??row.itemSortOrder??row.item_sort_order??null,
+    sellpiaPCode:String(overrides.sellpiaPCode??row.sellpiaCode??row.sellpia_p_code??row.rawCode??''),
+    ownCode,
+    shortageQty:Number(overrides.shortageQty??row.shortage??row.shortage_qty??row.short_qty??0)||0,
+    status:String(overrides.status??row.status??''),
+    productName:String(overrides.productName??row.product??row.name??row.p_name??''),
+    buyerName:String(overrides.buyerName??row.buyer??row.orderer??''),
+    isGold:isGoldValue
+  };
+}
 function toPickingDbRow(item={}){
   return {
     inv_no:item.invoiceNo,
