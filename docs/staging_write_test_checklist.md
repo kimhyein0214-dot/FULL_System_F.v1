@@ -14,6 +14,12 @@ while moving writes away from production tables.
 - Switch the stabilization repo table config to `stg_*`.
 - Keep production table names blocked by `allowProductionWrites:false`.
 
+## Smoke Test Log
+
+| Date (KST) | Scope | Result | Notes |
+| --- | --- | --- | --- |
+| 2026-06-30 | `stg_picking`, `stg_shortage` synthetic `_codex_smoke_*` row | Pass | POST 201, read count 1, DELETE 204, post-delete count 0 for both tables |
+
 ## Low-Risk Save Tests
 
 - Picking checkbox save writes to `stg_picking`.
@@ -22,11 +28,11 @@ while moving writes away from production tables.
 - Picking memo save writes only the memo fields expected by `saveMemo`.
 - Inspection item memo save writes only memo fields and does not alter `passed`.
 - CS shortage edit writes only picking shortage fields.
+- CS status save through `persistMisongStatus` writes filtered status fields.
+- Misong picking shortage save through `saveMisongShortage` writes adapter-built picking/shortage rows.
 
 ## Hold Until Explicit Review
 
-- CS status save through `persistMisongStatus`.
-- Misong picking shortage save through `saveMisongShortage`.
 - Inspection done marker using `__done__`.
 - Inspection status transitions across shortage and picking.
 - Any hard delete against `shortage`.
