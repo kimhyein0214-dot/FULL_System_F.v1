@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="pwa-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="pwa-icon.svg">
-<link rel="stylesheet" href="picking-system_0519.css?v=0630-stabilization-stage-tables-v1">
+<link rel="stylesheet" href="picking-system_0519.css?v=0630-stabilization-save-alias-v1">
 <!-- CSS moved to picking-system.css
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -5316,17 +5316,28 @@ async function persistMisongStatus(row,status){
   const ordNo=row.ordNo||noMap[seqNo]?.ord_no||inv;
   if(!row.itemNo&&!code) throw new Error('상품 순서번호가 없습니다.');
   if(!prod) throw new Error('자사코드 매핑이 없습니다.');
-  // TODO(stabilization-save-alias): convert this CS status row through toShortageDbRow after row->alias mapping is complete.
-  await upsertOrReplaceByItem('shortage',{
-    inv_no:inv,
-    ord_no:ordNo,
-    work_date:orderWorkDate(row,seqNo,ordNo),
-    item_no:row.itemNo||code,
-    item_sort_order:row.itemSortOrder??null,
-    sellpia_p_code:row.sellpiaCode||'',
-    p_code:prod,
+  const statusAlias=normalizeCsMisongRow(row,{
+    invoiceNo:inv,
+    sellpiaOrderNo:ordNo,
+    sellpiaItemNo:row.itemNo||code,
+    itemSortOrder:row.itemSortOrder??null,
+    sellpiaPCode:row.sellpiaCode||'',
+    ownCode:prod,
+    workDate:orderWorkDate(row,seqNo,ordNo),
     status:status||'배송대기'
-  },{inv_no:inv,item_no:row.itemNo||code});
+  });
+  const statusBase=toShortageDbRow(statusAlias);
+  const statusRow={
+    inv_no:statusBase.inv_no,
+    ord_no:statusBase.ord_no,
+    work_date:statusBase.work_date,
+    item_no:statusBase.item_no,
+    item_sort_order:statusBase.item_sort_order,
+    sellpia_p_code:statusBase.sellpia_p_code,
+    p_code:statusBase.p_code,
+    status:statusBase.status
+  };
+  await upsertOrReplaceByItem('shortage',statusRow,{inv_no:inv,item_no:row.itemNo||code});
   for(const legacyCode of legacyMisongCodes(inv,code)){
     await db.from('shortage').delete().eq('inv_no',inv).eq('p_code',legacyCode);
   }
@@ -7541,30 +7552,35 @@ async function saveMisongShortage(seq, code, newShortage, prevShortage){
     const storageCode=isValidOwnCode(candidateStorageCode) ? candidateStorageCode : '';
     if(!storageCode) throw new Error('자사코드 매핑이 없어 미송 저장을 중단했습니다.');
     const work_date=orderWorkDate(order,seq,_ord2);
-    // TODO(stabilization-save-alias): convert this misong picking row through toPickingDbRow after status semantics are separated.
-    await upsertOrReplaceByItem('picking',
-      {inv_no,ord_no:_ord2,item_no:itemNo,item_sort_order:item?.itemSortOrder??row?.itemSortOrder??null,sellpia_p_code:item?.sellpiaCode||row?.sellpiaCode||'',p_code:storageCode,shortage_qty:newShortage},
-      {inv_no,item_no:itemNo}
-    );
+    const misongAlias=normalizeCsMisongRow(row||{},{
+      invoiceNo:inv_no,
+      sellpiaOrderNo:_ord2,
+      sellpiaItemNo:itemNo,
+      itemSortOrder:item?.itemSortOrder??row?.itemSortOrder??null,
+      sellpiaPCode:item?.sellpiaCode||row?.sellpiaCode||'',
+      ownCode:storageCode,
+      workDate:work_date,
+      shortageQty:newShortage,
+      productName:item ? itemNameWithOption(item) : (row?.name||''),
+      buyerName:order?.buyer||row?.buyer||'',
+      isGold:isGold(item||code),
+      status:newShortage>0?'배송대기':'피킹완료'
+    });
+    const pickingRow=toPickingDbRow(misongAlias);
+    delete pickingRow.is_checked;
+    delete pickingRow.drawer_no;
+    delete pickingRow.hold;
+    await upsertOrReplaceByItem('picking',pickingRow,{inv_no,item_no:itemNo});
     // shortage 테이블 동기화
     if(newShortage>0){
-      await upsertOrReplaceByItem('shortage',{
-        inv_no, ord_no:_ord2,
-        work_date,
-        item_no:itemNo, item_sort_order:item?.itemSortOrder??row?.itemSortOrder??null, sellpia_p_code:item?.sellpiaCode||row?.sellpiaCode||'',
-        orderer: order?.buyer||row?.buyer||'',
-        p_code: storageCode, p_name: item ? itemNameWithOption(item) : (row?.name||''),
-        short_qty: newShortage, memo2_val: String(newShortage), is_gold: isGold(item||code),
-        status: '배송대기', updated_at: new Date().toISOString(),
-      },{inv_no,item_no:itemNo});
+      await upsertOrReplaceByItem('shortage',toShortageDbRow(misongAlias),{inv_no,item_no:itemNo});
     } else {
       // 미송피킹 완료: 삭제 대신 '피킹완료' 상태로 변경 → 메모 업데이터가 셀피아에 'ㅁ' 씀
-      await upsertOrReplaceByItem('shortage',{
-        inv_no, ord_no:_ord2, item_no:itemNo, item_sort_order:item?.itemSortOrder??row?.itemSortOrder??null, sellpia_p_code:item?.sellpiaCode||row?.sellpiaCode||'', p_code:storageCode,
-        work_date,
-        short_qty: 0, memo2_val: 'ㅁ', status: '피킹완료',
-        updated_at: new Date().toISOString(),
-      },{inv_no,item_no:itemNo});
+      const doneShortageRow=toShortageDbRow(misongAlias);
+      doneShortageRow.short_qty=0;
+      doneShortageRow.memo2_val='ㅁ';
+      doneShortageRow.status='피킹완료';
+      await upsertOrReplaceByItem('shortage',doneShortageRow,{inv_no,item_no:itemNo});
     }
     const legacyCodes=[code,row?.sellpiaCode,item?.sellpiaCode,item?.sellpiaProductCode].filter(v=>v&&String(v)!==String(storageCode));
     for(const legacyCode of [...new Set(legacyCodes)]){

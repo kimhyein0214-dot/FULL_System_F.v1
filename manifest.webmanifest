@@ -3,7 +3,7 @@
   "short_name": "피킹",
   "description": "태블릿 피킹 작업용 시스템",
   "lang": "ko-KR",
-  "start_url": "./?source=pwa&v=0630-stabilization-stage-tables-v1",
+  "start_url": "./?source=pwa&v=0630-stabilization-save-alias-v1",
   "scope": "./",
   "display": "standalone",
   "display_override": ["standalone", "browser"],

@@ -1,8 +1,8 @@
-const CACHE_NAME = 'picking-system-0630-stabilization-stage-tables-v1';
+const CACHE_NAME = 'picking-system-0630-stabilization-save-alias-v1';
 const APP_ASSETS = [
   './',
   './index.html',
-  './picking-system_0519.css?v=0630-stabilization-stage-tables-v1',
+  './picking-system_0519.css?v=0630-stabilization-save-alias-v1',
   './manifest.webmanifest',
   './pwa-icon.svg'
 ];
