@@ -2209,11 +2209,16 @@ function buildOutputOrders(ordersData,itemsByOrd,pickingRows=[]){
     if(!pickingByOrd[ord]) pickingByOrd[ord]=[];
     pickingByOrd[ord].push(row);
   });
-  const rows=(ordersData||[]).map((row,i)=>({
-    ...row,
-    _originalRank:getOrderOriginalRank(row,i+1),
-    _sortMetrics:getOrderSortMetrics(row,itemsByOrd[row.ord_no]||[],pickingByOrd[String(row.ord_no||'').trim()]||[])
-  }));
+  const rows=(ordersData||[]).map((row,i)=>{
+    const normalized=normalizeOrderRow(row);
+    const ordNo=normalized.sellpiaOrderNo;
+    return {
+      ...row,
+      _order:normalized,
+      _originalRank:getOrderOriginalRank(row,i+1),
+      _sortMetrics:getOrderSortMetrics(row,itemsByOrd[ordNo]||[],pickingByOrd[ordNo.trim()]||[])
+    };
+  });
   const sorted=buildRouteOptimizedWorkRows(rows);
   return sorted.map((row,i)=>({...row,planned_print_seq_no:i+1}));
 }
@@ -2810,27 +2815,29 @@ async function loadData(silent=false,preserveView=false){
     noMap={}; invToNo={}; seqToReal={}; realToSeq={};
     outputOrders.forEach((row,i)=>{
       const no=i+1;
+      const orderAlias=row._order||normalizeOrderRow(row);
       const sellpiaSeq=getSellpiaSeqValue(row,i+1);
-      noMap[no]={ord_no:row.ord_no,inv_no:row.inv_no,scraped_at:row.scraped_at||'',print_seq_no:row.print_seq_no||'',planned_print_seq_no:row.planned_print_seq_no||no,work_seq_no:row.work_seq_no||'',sellpia_seq_no:sellpiaSeq,original_seq_no:sellpiaSeq};
-      invToNo[row.inv_no]=no;
-      seqToReal[no]=String(row.inv_no).trim();
-      realToSeq[String(row.inv_no).trim()]=String(no);
+      noMap[no]={ord_no:orderAlias.sellpiaOrderNo,inv_no:orderAlias.invoiceNo,scraped_at:orderAlias.scrapedAt,print_seq_no:row.print_seq_no||'',planned_print_seq_no:row.planned_print_seq_no||no,work_seq_no:row.work_seq_no||'',sellpia_seq_no:sellpiaSeq,original_seq_no:sellpiaSeq};
+      invToNo[orderAlias.invoiceNo]=no;
+      seqToReal[no]=String(orderAlias.invoiceNo).trim();
+      realToSeq[String(orderAlias.invoiceNo).trim()]=String(no);
     });
 
     // 4. inv_no 대신 ord_no 기준으로 그룹핑 (inv_no가 없는 오후주문 혼선 방지)
     // ord_no → no 매핑 (관리메모 시딩용)
     const ordToNo={};
-    outputOrders.forEach((row,i)=>{ ordToNo[row.ord_no]=i+1; });
+    outputOrders.forEach((row,i)=>{ const orderAlias=row._order||normalizeOrderRow(row); ordToNo[orderAlias.sellpiaOrderNo]=i+1; });
 
     // 5. ORDERS_ALL 구성
     ORDERS_ALL=[];
     outputOrders.forEach((row,i)=>{
       const no=i+1;
+      const orderAlias=row._order||normalizeOrderRow(row);
       const sellpiaSeq=getSellpiaSeqValue(row,i+1);
-      const m=row._sortMetrics||getOrderSortMetrics(row,itemsByOrd[row.ord_no]||[]);
-      ORDERS_ALL.push({no,printSeqNo:row.print_seq_no||'',plannedPrintSeqNo:row.planned_print_seq_no||no,workSeqNo:row.work_seq_no||'',originalSeqNo:sellpiaSeq,sellpiaSeqNo:sellpiaSeq,buyer:row.buyer||'',recv:row.receiver||row.buyer||'',ordDate:row.ord_date||'',invNo:row.inv_no||'',seller:row.seller||'',seller_id:row.seller_id||'',itemKindCount:m.itemKindCount,totalItemQty:m.totalItemQty,routeZoneRank:m.routeZoneRank,routeZoneSpread:m.routeZoneSpread,primaryRouteCode:m.primaryRouteCode,hasGoldItem:m.hasGoldItem,hasShortage:m.hasShortage,hasHold:m.hasHold,items:itemsByOrd[row.ord_no]||[],
+      const m=row._sortMetrics||getOrderSortMetrics(row,itemsByOrd[orderAlias.sellpiaOrderNo]||[]);
+      ORDERS_ALL.push({no,printSeqNo:row.print_seq_no||'',plannedPrintSeqNo:row.planned_print_seq_no||no,workSeqNo:row.work_seq_no||'',originalSeqNo:sellpiaSeq,sellpiaSeqNo:sellpiaSeq,buyer:orderAlias.buyerName,recv:orderAlias.receiverName,ordDate:orderAlias.receiptDate,invNo:orderAlias.invoiceNo,seller:orderAlias.seller,seller_id:orderAlias.sellerId,itemKindCount:m.itemKindCount,totalItemQty:m.totalItemQty,routeZoneRank:m.routeZoneRank,routeZoneSpread:m.routeZoneSpread,primaryRouteCode:m.primaryRouteCode,hasGoldItem:m.hasGoldItem,hasShortage:m.hasShortage,hasHold:m.hasHold,items:itemsByOrd[orderAlias.sellpiaOrderNo]||[],
         /* postoffice CSV enrichment fields (from orders) */
-        ordNo:row.ord_no||'',
+        ordNo:orderAlias.sellpiaOrderNo,
         receiverName:row.receiver_name||row.receiver||row.buyer||'',
         receiverTel:row.receiver_tel||'',
         receiverMobile:row.receiver_mobile||'',
