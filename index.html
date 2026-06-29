@@ -1862,33 +1862,34 @@ async function fetchOrderItemOwnMapForShortageRows(rows){
         .in('ord_no',chunk));
       const ordCounts={};
       (itemRows||[]).forEach(it=>{
-        const ord=String(it.ord_no||'').trim();
+        const normalized=normalizeOrderItemRow(it);
+        const ord=normalized.sellpiaOrderNo.trim();
         const rowIndex=ordCounts[ord]||0;
         ordCounts[ord]=rowIndex+1;
-        const sellpiaCode=String(it.p_code||'').trim();
+        const sellpiaCode=normalized.sellpiaPCode.trim();
         const ownCode=resolveOwnCodeText({
           code:sellpiaCode,
-          prodCode:it.prod_code||'',
-          option:it.p_option||'',
-          name:it.p_name||''
-        }) || String(it.prod_code||'').trim();
+          prodCode:normalized.ownCode,
+          option:normalized.optionName,
+          name:normalized.productName
+        }) || normalized.ownCode.trim();
         if(!sellpiaCode||!ownCode||looksLikeSellpiaCode(ownCode)) return;
-        const rawItemNo=String(it.item_no||'').trim();
-        const stateItemNo=makeStateItemNo(rawItemNo,it.sort_order,rowIndex);
+        const rawItemNo=normalized.sellpiaItemNo.trim();
+        const stateItemNo=makeStateItemNo(rawItemNo,normalized.sortOrder,rowIndex);
         const item={
           code:stateItemNo,
           itemNo:stateItemNo,
           rawItemNo,
-          itemSortOrder:it.sort_order,
+          itemSortOrder:normalized.sortOrder,
           prodCode:ownCode,
           resolvedOwnCode:ownCode,
           sellpiaCode,
-          name:it.p_name||'',
-          option:it.p_option||'',
-          qty:it.qty||1
+          name:normalized.productName,
+          option:normalized.optionName,
+          qty:normalized.orderedQty
         };
         if(rawItemNo) putUnique(ord+'|'+rawItemNo,item);
-        if(it.sort_order) putUnique(ord+'|__sort_'+String(it.sort_order).trim(),item);
+        if(normalized.sortOrder) putUnique(ord+'|__sort_'+String(normalized.sortOrder).trim(),item);
         putUnique(ord+'|'+sellpiaCode,item);
         putUnique(ord+'|'+ownCode,item);
       });
@@ -2762,31 +2763,33 @@ async function loadData(silent=false,preserveView=false){
     const itemsData=await fetchAllRows(()=>db.from('order_items').select('*').eq('ord_date',selectedDate).order('sort_order',{ascending:true,nullsFirst:false}));
     const itemsByOrd={};
     (itemsData||[]).forEach(it=>{
-      if(!itemsByOrd[it.ord_no]) itemsByOrd[it.ord_no]=[];
-      const itemRowIndex=itemsByOrd[it.ord_no].length;
-      const sellpiaCode=String(it.p_code||'').trim();
+      const normalized=normalizeOrderItemRow(it);
+      const ordNo=normalized.sellpiaOrderNo;
+      if(!itemsByOrd[ordNo]) itemsByOrd[ordNo]=[];
+      const itemRowIndex=itemsByOrd[ordNo].length;
+      const sellpiaCode=normalized.sellpiaPCode.trim();
       const resolvedOwnCode=resolveOwnCodeText({
         code:sellpiaCode,
-        prodCode:it.prod_code||'',
-        option:it.p_option||it.seller_option_name||'',
-        name:it.p_name||it.seller_product_name||''
+        prodCode:normalized.ownCode,
+        option:normalized.optionName||it.seller_option_name||'',
+        name:normalized.productName||it.seller_product_name||''
       });
-      const prodOwnCode=String(it.prod_code||'').trim();
+      const prodOwnCode=normalized.ownCode.trim();
       const ownCode=(resolvedOwnCode&&!looksLikeSellpiaCode(resolvedOwnCode))
         ? resolvedOwnCode
-        : ((prodOwnCode&&!looksLikeSellpiaCode(prodOwnCode)) ? prodOwnCode : missingOwnCodeKey({ord_no:it.ord_no,p_code:sellpiaCode}));
-      const rawItemNo=String(it.item_no||'').trim();
-      const itemKey=makeStateItemNo(rawItemNo,it.sort_order,itemRowIndex);
-      itemsByOrd[it.ord_no].push({
-        code:itemKey,itemNo:itemKey,rawItemNo,itemSortOrder:it.sort_order,
-        sellpiaCode,qty:it.qty||1,name:it.p_name||'',option:it.p_option||'',
+        : ((prodOwnCode&&!looksLikeSellpiaCode(prodOwnCode)) ? prodOwnCode : missingOwnCodeKey({ord_no:ordNo,p_code:sellpiaCode}));
+      const rawItemNo=normalized.sellpiaItemNo.trim();
+      const itemKey=makeStateItemNo(rawItemNo,normalized.sortOrder,itemRowIndex);
+      itemsByOrd[ordNo].push({
+        code:itemKey,itemNo:itemKey,rawItemNo,itemSortOrder:normalized.sortOrder,
+        sellpiaCode,qty:normalized.orderedQty,name:normalized.productName,option:normalized.optionName,
         prodCode:ownCode,resolvedOwnCode:ownCode,nal:!!sellpiaCode.startsWith('낱'),hold:false,
-        location:it.p_location||'',o_shop_memo2:it.o_shop_memo2||'',
+        location:normalized.location,o_shop_memo2:it.o_shop_memo2||'',
         /* postoffice CSV fields */
-        item_no:it.item_no||'',
-        seller_product_name:it.seller_product_name||it.p_name||'',
-        seller_option_name:it.seller_option_name||it.p_option||'',
-        sellpiaItemSalesAmount:it.sellpia_item_sales_amount,
+        item_no:normalized.sellpiaItemNo,
+        seller_product_name:it.seller_product_name||normalized.productName,
+        seller_option_name:it.seller_option_name||normalized.optionName,
+        sellpiaItemSalesAmount:normalized.sellpiaItemSalesAmount,
         sellpiaItemSalesAmountRaw:it.sellpia_item_sales_amount_raw||''
       });
     });
