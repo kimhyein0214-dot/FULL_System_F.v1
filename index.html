@@ -2542,6 +2542,7 @@ function saveMemo(invNo,code,val){
   const item=findOrderItemByStateCode(order,code);
   const prod=isValidOwnCode(item?.prodCode||item?.resolvedOwnCode) ? (item.prodCode||item.resolvedOwnCode) : '';
   if(!item?.code||!prod) return;
+  // TODO(stabilization-save-alias): route this memo row through a picking save adapter after memo support is added.
   upsertOrReplaceByItem('picking',
     {inv_no,ord_no:ord_no_m,item_no:item.itemNo||item.code,item_sort_order:item.itemSortOrder??null,sellpia_p_code:item.sellpiaCode||'',p_code:prod,memo:val||''},
     {inv_no,item_no:item.itemNo||item.code}
@@ -4157,6 +4158,7 @@ function autoRefreshData(){
   loadData(true,true);
 }
 async function upsertOrReplaceByItem(table,row,match){
+  // TODO(stabilization-save-alias): keep this as the single legacy upsert fallback while row adapters are introduced.
   const {error}=await db.from(table).upsert(row,{onConflict:'inv_no,item_no'});
   if(!error) return;
   const msg=String(error.message||error.details||error.hint||'');
@@ -5215,6 +5217,7 @@ async function persistMisongStatus(row,status){
   const prod=misongOwnCodeFor(row);
   if(!row.itemNo&&!code) throw new Error('상품 순서번호가 없습니다.');
   if(!prod) throw new Error('자사코드 매핑이 없습니다.');
+  // TODO(stabilization-save-alias): convert this CS status row through toShortageDbRow after row->alias mapping is complete.
   await upsertOrReplaceByItem('shortage',{
     inv_no:inv,
     ord_no:row.ordNo||noMap[seqNo]?.ord_no||inv,
@@ -5365,6 +5368,7 @@ async function updateCSShortage(inv, code, val, inputEl){
     const row=misongRowFor(inv,code);
     const prod=misongOwnCodeFor(row);
     if(!prod) throw new Error('자사코드 매핑이 없습니다.');
+    // TODO(stabilization-save-alias): convert this CS shortage row through toPickingDbRow after CS row aliases are fixed.
     await upsertOrReplaceByItem('picking',
       {inv_no:inv,ord_no:_ord,item_no:row?.itemNo||code,item_sort_order:row?.itemSortOrder??null,sellpia_p_code:row?.sellpiaCode||'',p_code:prod,shortage_qty:qty},
       {inv_no:inv,item_no:row?.itemNo||code}
@@ -5729,6 +5733,7 @@ async function uploadCSDirectData(){
   if(!csDirectParsed||!csDirectParsed.length){ toast('⚠ 파일을 먼저 선택하세요'); return; }
   toast('⏳ 미송현황에 추가 중...',3000);
   try{
+    // TODO(stabilization-save-alias): add a dedicated manual-CS upload adapter before changing this minimal row shape.
     const upsertRows = csDirectParsed.filter(r=>isValidOwnCode(r.code)&&String(r.itemNo||r.item_no||'').trim()).map(r=>({
       inv_no: String(r.inv),
       item_no: String(r.itemNo||r.item_no),
@@ -5859,6 +5864,7 @@ function insp_saveMemo(invNo,code,val){
     const ord_no=order?.ordNo||order?.ord_no||noMap[seq_no]?.ord_no||noMap[invNo]?.ord_no||inv_no;
     const item_no=String(code||'').trim();
     if(!item_no){ _saveQueue.delete(saveKey); return; }
+    // TODO(stabilization-save-alias): introduce toInspectionDbRow before changing inspection memo keys.
     db.from('inspection').upsert(
       {inv_no,ord_no,item_no,p_code:code,insp_memo:val||'',memo_updated_at:new Date().toISOString()},
       {onConflict:'inv_no,p_code'}
@@ -6680,6 +6686,7 @@ async function insp_toggleDone(invNo){
   const inv_no=invKey;
   const ord_no=order?.ordNo||order?.ord_no||noMap[order?.no]?.ord_no||noMap[realToSeq[inv_no]]?.ord_no||inv_no;
   try{
+    // TODO(stabilization-save-alias): keep inspection done marker direct until inspection key strategy is finalized.
     const {error:doneErr}=await db.from('inspection').upsert({inv_no,ord_no,item_no:'__done__',p_code:'__done__',passed:nextDone},{onConflict:'inv_no,p_code'});
     if(doneErr) throw doneErr;
     if(nextDone){
@@ -7414,6 +7421,7 @@ async function saveMisongShortage(seq, code, newShortage, prevShortage){
     const candidateStorageCode=String(item?.prodCode||item?.resolvedOwnCode||row?.prodCode||row?.dispCode||'').trim();
     const storageCode=isValidOwnCode(candidateStorageCode) ? candidateStorageCode : '';
     if(!storageCode) throw new Error('자사코드 매핑이 없어 미송 저장을 중단했습니다.');
+    // TODO(stabilization-save-alias): convert this misong picking row through toPickingDbRow after status semantics are separated.
     await upsertOrReplaceByItem('picking',
       {inv_no,ord_no:_ord2,item_no:itemNo,item_sort_order:item?.itemSortOrder??row?.itemSortOrder??null,sellpia_p_code:item?.sellpiaCode||row?.sellpiaCode||'',p_code:storageCode,shortage_qty:newShortage},
       {inv_no,item_no:itemNo}

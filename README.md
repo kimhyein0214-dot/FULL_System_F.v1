@@ -97,6 +97,14 @@ production table names.
 | Picked state | `isPicked` | `is_checked`, `checked` |
 | Inspected state | `isInspected` | `inspection.passed` |
 
+## Save Path Inventory
+
+- `docs/stabilization_save_path_inventory.md`
+
+Use this inventory before changing any `picking`, `shortage`, or `inspection`
+write path. It separates low-risk alias adapter candidates from status changes
+and hard deletes that should wait for staging write tests.
+
 ## Verification
 
 Before any production backport:
