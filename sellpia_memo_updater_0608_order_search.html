@@ -183,6 +183,15 @@
     function dbTable(name) {
       return (CONFIG.tables && CONFIG.tables[name]) || name;
     }
+    function dbPath(path) {
+      const raw = String(path || '').replace(/^\/+/, '');
+      const queryAt = raw.indexOf('?');
+      const pathPart = queryAt >= 0 ? raw.slice(0, queryAt) : raw;
+      const inlineQuery = queryAt >= 0 ? raw.slice(queryAt) : '';
+      const segments = pathPart.split('/');
+      if (segments[0] && segments[0] !== 'rpc') segments[0] = dbTable(segments[0]);
+      return segments.join('/') + inlineQuery;
+    }
     const WRITE_GUARDED_TABLES = new Set(['orders', 'order_items', 'picking', 'shortage']);
     function isProductionDbTarget() {
       return String(CONFIG.supabaseUrl || '').includes(CONFIG.productionProjectRef || 'vgxocngpykhlkosiaeew');
@@ -244,7 +253,7 @@
     async function dbRequest(path) {
       const method = 'GET';
       if (method !== 'GET') assertDbWriteAllowed(String(path || '').split('?')[0], method);
-      const res = await fetch(CONFIG.supabaseUrl + '/rest/v1/' + path, {
+      const res = await fetch(CONFIG.supabaseUrl + '/rest/v1/' + dbPath(path), {
         method,
         headers: {
           apikey: CONFIG.supabaseKey,
