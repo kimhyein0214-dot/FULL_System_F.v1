@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="pwa-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="pwa-icon.svg">
-<link rel="stylesheet" href="picking-system_0519.css?v=0629-code-option-nowrap-v1">
+<link rel="stylesheet" href="picking-system_0519.css?v=0630-stabilization-workdate-v1">
 <!-- CSS moved to picking-system.css
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -1437,6 +1437,7 @@ function normalizeCsMisongRow(row={},overrides={}){
     itemSortOrder:overrides.itemSortOrder??row.itemSortOrder??row.item_sort_order??null,
     sellpiaPCode:String(overrides.sellpiaPCode??row.sellpiaCode??row.sellpia_p_code??row.rawCode??''),
     ownCode,
+    workDate:String(overrides.workDate??row.workDate??row.work_date??row.date??''),
     shortageQty:Number(overrides.shortageQty??row.shortage??row.shortage_qty??row.short_qty??0)||0,
     status:String(overrides.status??row.status??''),
     productName:String(overrides.productName??row.product??row.name??row.p_name??''),
@@ -1462,6 +1463,7 @@ function toShortageDbRow(item={}){
   return {
     inv_no:item.invoiceNo,
     ord_no:item.sellpiaOrderNo,
+    work_date:item.workDate||selectedDate,
     item_no:item.sellpiaItemNo,
     item_sort_order:item.itemSortOrder??null,
     sellpia_p_code:item.sellpiaPCode||'',
@@ -2877,7 +2879,7 @@ async function loadData(silent=false,preserveView=false){
       const no=i+1;
       const orderAlias=row._order||normalizeOrderRow(row);
       const sellpiaSeq=getSellpiaSeqValue(row,i+1);
-      noMap[no]={ord_no:orderAlias.sellpiaOrderNo,inv_no:orderAlias.invoiceNo,scraped_at:orderAlias.scrapedAt,print_seq_no:row.print_seq_no||'',planned_print_seq_no:row.planned_print_seq_no||no,work_seq_no:row.work_seq_no||'',sellpia_seq_no:sellpiaSeq,original_seq_no:sellpiaSeq};
+      noMap[no]={ord_no:orderAlias.sellpiaOrderNo,inv_no:orderAlias.invoiceNo,ord_date:orderAlias.receivedDate||selectedDate,scraped_at:orderAlias.scrapedAt,print_seq_no:row.print_seq_no||'',planned_print_seq_no:row.planned_print_seq_no||no,work_seq_no:row.work_seq_no||'',sellpia_seq_no:sellpiaSeq,original_seq_no:sellpiaSeq};
       invToNo[orderAlias.invoiceNo]=no;
       seqToReal[no]=String(orderAlias.invoiceNo).trim();
       realToSeq[String(orderAlias.invoiceNo).trim()]=String(no);
@@ -4253,6 +4255,7 @@ async function saveToSheet(invNo,code,isChecked,shortageVal,drawerVal,holdVal){
       ownCode:storageCode,
       isPicked:!!isChecked,
       shortageQty:shortageVal||0,
+      workDate:orderWorkDate(order,invNo,ord_no),
       drawerNo:drawerVal||'',
       isHold:!!holdVal,
       buyerName:order?.buyer||'',
@@ -4816,6 +4819,33 @@ function dateFromOrdNo(ordNo){
   const m=s.match(/^(\d{4})(\d{2})(\d{2})/);
   return m?`${m[1]}-${m[2]}-${m[3]}`:'';
 }
+function normalizeDateValue(value){
+  const s=String(value||'').trim();
+  const m=s.match(/^(\d{4})[-/.]?(\d{2})[-/.]?(\d{2})/);
+  return m?`${m[1]}-${m[2]}-${m[3]}`:'';
+}
+function orderWorkDate(order,seqNo,ordNo){
+  return normalizeDateValue(
+    order?.ordDate || order?.ord_date || order?.workDate || order?.work_date || order?.date ||
+    (seqNo ? noMap[seqNo]?.ord_date : '') ||
+    dateFromOrdNo(ordNo) ||
+    selectedDate
+  ) || selectedDate;
+}
+async function fetchShortageRowsForSelectedDate(){
+  const byKey=new Map();
+  const addRows=rows=>(rows||[]).forEach(r=>{
+    const key=String(r.id||'') || [r.inv_no,r.ord_no,r.item_no,r.p_code].map(v=>String(v||'')).join('|');
+    byKey.set(key,r);
+  });
+  addRows(await fetchAllRows(()=>db.from('shortage').select('*').eq('work_date',selectedDate)));
+
+  const ordNos=[...new Set(Object.values(noMap||{}).map(v=>String(v?.ord_no||'').trim()).filter(Boolean))];
+  for(const chunk of chunkArray(ordNos,80)){
+    addRows(await fetchAllRows(()=>db.from('shortage').select('*').is('work_date',null).in('ord_no',chunk)));
+  }
+  return [...byKey.values()];
+}
 function shortageRowQty(row){
   const n=Number(row?.short_qty);
   if(Number.isFinite(n)&&n>0) return n;
@@ -4887,8 +4917,9 @@ function csRowShortageQty(row){
   return Number(row.shortage)||0;
 }
 function getShortageBaseDate(row,seqNo){
-  return dateFromOrdNo(row?.ord_no)
-    || (seqNo?(noMap[seqNo]?.scraped_at||noMap[seqNo]?.ord_date||''):'')
+  return row?.work_date
+    || dateFromOrdNo(row?.ord_no)
+    || (seqNo?(noMap[seqNo]?.ord_date||noMap[seqNo]?.scraped_at||''):'')
     || row?.created_at
     || row?.created
     || row?.reg_date
@@ -4902,8 +4933,7 @@ async function loadMisongData(showToast=false){
   try{
     if(showToast) toast('⏳ 미송현황 불러오는 중...',4000);
     // 검품/메모 정리 완료는 CS 발송 대상이 아니므로 클라이언트에서 표준 상태로 제외합니다.
-    const {data:shRows,error}=await db.from('shortage').select('*');
-    if(error) throw error;
+    const shRows=await fetchShortageRowsForSelectedDate();
     const shortageOwnMap=await fetchOwnCodeMapForPcodes((shRows||[]).map(r=>r.p_code));
     const orderItemOwnMap=await fetchOrderItemOwnMapForShortageRows(shRows||[]);
     misongData = (shRows||[]).map(r=>{
@@ -5274,12 +5304,14 @@ async function persistMisongStatus(row,status){
   const inv=row.inv, code=row.code;
   const seqNo=realToSeq[inv]||inv;
   const prod=misongOwnCodeFor(row);
+  const ordNo=row.ordNo||noMap[seqNo]?.ord_no||inv;
   if(!row.itemNo&&!code) throw new Error('상품 순서번호가 없습니다.');
   if(!prod) throw new Error('자사코드 매핑이 없습니다.');
   // TODO(stabilization-save-alias): convert this CS status row through toShortageDbRow after row->alias mapping is complete.
   await upsertOrReplaceByItem('shortage',{
     inv_no:inv,
-    ord_no:row.ordNo||noMap[seqNo]?.ord_no||inv,
+    ord_no:ordNo,
+    work_date:orderWorkDate(row,seqNo,ordNo),
     item_no:row.itemNo||code,
     item_sort_order:row.itemSortOrder??null,
     sellpia_p_code:row.sellpiaCode||'',
@@ -5385,7 +5417,7 @@ async function cleanMisongDone(){
   toast('⏳ 삭제 중...',5000);
   try{
     // TODO(soft-delete): 실제 DELETE입니다. NAS 이전 시 deleted_at/status 기반 soft delete로 전환 후보입니다.
-    const {error}=await db.from('shortage').delete().eq('status','발송완료');
+    const {error}=await db.from('shortage').delete().eq('status','발송완료').eq('work_date',selectedDate);
     if(error) throw error;
     const cnt=doneRows.length;
     misongData=misongData.filter(r=>r.status!=='발송완료');
@@ -5809,6 +5841,7 @@ async function uploadCSDirectData(){
       inv_no: String(r.inv),
       item_no: String(r.itemNo||r.item_no),
       p_code: String(r.code),
+      work_date: selectedDate,
       status: '배송대기',
       is_gold: isGold(r.code),
     }));
@@ -6243,8 +6276,7 @@ let _misongOrdersCache = [];  // getMisongOrders 캐시
 
 async function insp_loadMisongOrders(){
   try{
-    const {data:shRows,error}=await db.from('shortage').select('*').range(0,9999);
-    if(error) throw error;
+    const shRows=await fetchShortageRowsForSelectedDate();
     const shortageOwnMap=await fetchOwnCodeMapForPcodes((shRows||[]).map(r=>r.p_code));
     const orderItemOwnMap=await fetchOrderItemOwnMapForShortageRows(shRows||[]);
     const invMap={};
@@ -7221,8 +7253,7 @@ async function loadMisongPickingData(showToast=false){
     });
   }
   try{
-    const {data:shRows,error}=await db.from('shortage').select('*').range(0,9999);
-    if(error) throw error;
+    const shRows=await fetchShortageRowsForSelectedDate();
     const shortageOwnMap=await fetchOwnCodeMapForPcodes((shRows||[]).map(r=>r.p_code));
     const orderItemOwnMap=await fetchOrderItemOwnMapForShortageRows(shRows||[]);
     (shRows||[]).forEach(r=>{
@@ -7500,6 +7531,7 @@ async function saveMisongShortage(seq, code, newShortage, prevShortage){
     const candidateStorageCode=String(item?.prodCode||item?.resolvedOwnCode||row?.prodCode||row?.dispCode||'').trim();
     const storageCode=isValidOwnCode(candidateStorageCode) ? candidateStorageCode : '';
     if(!storageCode) throw new Error('자사코드 매핑이 없어 미송 저장을 중단했습니다.');
+    const work_date=orderWorkDate(order,seq,_ord2);
     // TODO(stabilization-save-alias): convert this misong picking row through toPickingDbRow after status semantics are separated.
     await upsertOrReplaceByItem('picking',
       {inv_no,ord_no:_ord2,item_no:itemNo,item_sort_order:item?.itemSortOrder??row?.itemSortOrder??null,sellpia_p_code:item?.sellpiaCode||row?.sellpiaCode||'',p_code:storageCode,shortage_qty:newShortage},
@@ -7509,6 +7541,7 @@ async function saveMisongShortage(seq, code, newShortage, prevShortage){
     if(newShortage>0){
       await upsertOrReplaceByItem('shortage',{
         inv_no, ord_no:_ord2,
+        work_date,
         item_no:itemNo, item_sort_order:item?.itemSortOrder??row?.itemSortOrder??null, sellpia_p_code:item?.sellpiaCode||row?.sellpiaCode||'',
         orderer: order?.buyer||row?.buyer||'',
         p_code: storageCode, p_name: item ? itemNameWithOption(item) : (row?.name||''),
@@ -7519,6 +7552,7 @@ async function saveMisongShortage(seq, code, newShortage, prevShortage){
       // 미송피킹 완료: 삭제 대신 '피킹완료' 상태로 변경 → 메모 업데이터가 셀피아에 'ㅁ' 씀
       await upsertOrReplaceByItem('shortage',{
         inv_no, ord_no:_ord2, item_no:itemNo, item_sort_order:item?.itemSortOrder??row?.itemSortOrder??null, sellpia_p_code:item?.sellpiaCode||row?.sellpiaCode||'', p_code:storageCode,
+        work_date,
         short_qty: 0, memo2_val: 'ㅁ', status: '피킹완료',
         updated_at: new Date().toISOString(),
       },{inv_no,item_no:itemNo});

@@ -204,6 +204,27 @@
       }
       return rows;
     }
+    function dbRowKey(row) {
+      return normal(row.id) || [row.inv_no, row.ord_no, row.item_no, row.p_code].map(normal).join('|');
+    }
+    async function dbShortageRowsForWorkDate(date, ordNos, select) {
+      const byKey = new Map();
+      const addRows = rows => (rows || []).forEach(row => {
+        const key = dbRowKey(row);
+        if (key) byKey.set(key, row);
+      });
+      try {
+        addRows(await dbRequest(`${dbTable('shortage')}?work_date=eq.${encodeURIComponent(date)}&select=${select}`));
+        const legacyRows = ordNos && ordNos.length
+          ? await dbRequestIn('shortage', 'ord_no', ordNos, select)
+          : [];
+        addRows((legacyRows || []).filter(row => !normal(row.work_date)));
+        return [...byKey.values()];
+      } catch (err) {
+        addLog(`  DB fallback(shortage work_date): ${err.message.slice(0, 80)}`);
+        return ordNos && ordNos.length ? await dbRequestIn('shortage', 'ord_no', ordNos, select) : [];
+      }
+    }
     const waitFor = async (predicate, timeout, interval = 120) => {
       const started = Date.now();
       let lastError = null;
@@ -971,7 +992,7 @@
         'shortage',
         invNo,
         detail.ordNo,
-        'inv_no,ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val'
+        'inv_no,ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val,work_date'
       );
       const pickingRows = await dbRowsByInvoiceOrOrder(
         'picking',
@@ -1010,13 +1031,7 @@
         const ordNos = uniq(orderRows.map(row => row.ord_no));
         if (!ordNos.length) return [];
 
-        let shortageRows;
-        try {
-          shortageRows = await dbRequestIn('shortage', 'ord_no', ordNos, 'inv_no,ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val,is_gold');
-        } catch (err) {
-          addLog(`  DB fallback(shortage date): ${err.message.slice(0, 80)}`);
-          shortageRows = await dbRequestIn('shortage', 'ord_no', ordNos, 'ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val');
-        }
+        let shortageRows = await dbShortageRowsForWorkDate(date, ordNos, 'inv_no,ord_no,item_no,short_qty,drawer_no,status,p_code,memo2_val,is_gold,work_date');
         let filteredOrdNos = ordNos;
         if (typeFilter !== 'ALL') {
           let goldMeta = new Map();
