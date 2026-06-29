@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Final Sellpia V1</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+      background: #101827;
+      color: #f8fafc;
+    }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      box-sizing: border-box;
+    }
+    main {
+      width: min(760px, 100%);
+      background: #172033;
+      border: 1px solid #2b3858;
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .36);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+    p, li {
+      color: #cbd5e1;
+      line-height: 1.65;
+    }
+    code {
+      color: #bfdbfe;
+      background: #111827;
+      border: 1px solid #27344f;
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    .bookmarklet {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      margin: 18px 0 10px;
+      padding: 0 20px;
+      border-radius: 8px;
+      background: #ef4444;
+      color: #fff;
+      font-weight: 900;
+      text-decoration: none;
+      box-shadow: 0 12px 30px rgba(239, 68, 68, .28);
+    }
+    button {
+      min-height: 40px;
+      border: 1px solid #42526f;
+      border-radius: 8px;
+      padding: 0 14px;
+      background: #253149;
+      color: #e5e7eb;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    #copy-status {
+      margin-left: 10px;
+      color: #86efac;
+      font-size: 13px;
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Final Sellpia V1</h1>
+    <p>
+      하나의 북마클렛으로 셀피아 페이지를 자동 판별합니다.
+      <code>재고매칭탭</code>에서는 스크래퍼를, <code>주문조회탭</code>에서는 메모/배송보류 업데이터를 실행합니다.
+    </p>
+    <a id="bookmarklet" class="bookmarklet" href="#">Final Sellpia V1</a>
+    <div>
+      <button id="copy" type="button">북마클렛 주소 복사</button>
+      <span id="copy-status"></span>
+    </div>
+    <ul>
+      <li>주문조회탭 업데이터는 북마클렛에서 선택한 날짜를 셀피아 검색조건에 자동 적용한 뒤 실행합니다.</li>
+      <li>미송 전량 피킹완료 상태는 검품 전이므로 셀피아 메모/배송보류를 건드리지 않습니다.</li>
+      <li>부분 미송피킹은 피킹된 상품의 관리메모2만 <code>ㅁ</code>으로 반영합니다.</li>
+      <li>발송대기는 관리메모1 지정 문구, 관리메모2 <code>ㅁ</code>, 배송보류 해제 흐름으로 처리합니다.</li>
+    </ul>
+  </main>
+  <script>
+    const href = "javascript:(()=>{const s=document.createElement('script');s.src='https://kimhyein0214-dot.github.io/FULL_System/Final_Sellpia_V1.js?v='+Date.now();s.referrerPolicy='no-referrer';document.documentElement.appendChild(s);})()";
+    document.getElementById('bookmarklet').href = href;
+    document.getElementById('copy').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(href);
+      const status = document.getElementById('copy-status');
+      status.textContent = '복사됨';
+      setTimeout(() => { status.textContent = ''; }, 1800);
+    });
+  </script>
+</body>
+</html>
