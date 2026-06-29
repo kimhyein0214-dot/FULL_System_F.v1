@@ -100,6 +100,7 @@ production table names.
 ## Save Path Inventory
 
 - `docs/stabilization_save_path_inventory.md`
+- `docs/staging_write_test_checklist.md`
 
 Use this inventory before changing any `picking`, `shortage`, or `inspection`
 write path. It separates low-risk alias adapter candidates from status changes

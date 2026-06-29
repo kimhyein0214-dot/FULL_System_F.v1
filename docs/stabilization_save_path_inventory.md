@@ -39,3 +39,10 @@ guesswork.
 - Inspection done marker key: `inv_no,p_code` with `__done__`.
 - Workflow status transitions used by shortage, inspection, and memo cleanup.
 - Legacy `p_code` cleanup deletes until item-number matching is verified on staging data.
+
+## Staging Test Requirement
+
+- `docs/staging_write_test_checklist.md`
+
+`persistMisongStatus`, `saveMisongShortage`, inspection done markers, status
+transitions, and hard deletes stay direct until the staging checklist is run.
