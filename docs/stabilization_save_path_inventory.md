@@ -19,7 +19,7 @@ guesswork.
 | Picking memo save | `saveMemo` | `picking` | `toPickingDbRow` identity fields plus `memo` | Applied | Low |
 | CS status save | `persistMisongStatus` | `shortage` | Direct literal shortage status row | `normalizeCsMisongRow` added, not wired | Medium |
 | CS arrival date | `updateArrivalDate` | `shortage` | Direct field update | Keep direct for now | Medium |
-| CS shortage edit | `updateCSShortage` | `picking` | Direct literal picking row | `normalizeCsMisongRow` added, not wired | Medium |
+| CS shortage edit | `updateCSShortage` | `picking` | `normalizeCsMisongRow` + `toPickingDbRow` shortage fields | Applied | Low-medium |
 | CS direct CSV upload | `uploadCSDirectData` | `shortage` | Minimal direct row | Needs dedicated adapter | Medium |
 | CS cleanup | `cleanSelectedCSDone`, `deleteMisongRow`, `cleanMisongDone` | `shortage` | Hard delete | Hold until soft-delete decision | High |
 | Inspection item memo | `insp_saveMemo` | `inspection` | `toInspectionDbRow` memo fields | Applied | Low-medium |
@@ -29,8 +29,8 @@ guesswork.
 
 ## Next Safe Refactor Order
 
-1. Convert `updateCSShortage` picking row through `normalizeCsMisongRow` and `toPickingDbRow`.
-2. Keep `persistMisongStatus` and `saveMisongShortage` direct until staging write tests.
+1. Keep `persistMisongStatus` and `saveMisongShortage` direct until staging write tests.
+2. Add staging write test checklist before deeper status/delete changes.
 3. Leave hard deletes and inspection status transitions until staging tables are live.
 
 ## Do Not Touch Yet

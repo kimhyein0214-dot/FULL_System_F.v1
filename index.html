@@ -5427,9 +5427,21 @@ async function updateCSShortage(inv, code, val, inputEl){
     const row=misongRowFor(inv,code);
     const prod=misongOwnCodeFor(row);
     if(!prod) throw new Error('자사코드 매핑이 없습니다.');
-    // TODO(stabilization-save-alias): convert this CS shortage row through toPickingDbRow after CS row aliases are fixed.
+    const csAlias=normalizeCsMisongRow(row||{},{
+      invoiceNo:inv,
+      sellpiaOrderNo:_ord,
+      sellpiaItemNo:row?.itemNo||code,
+      itemSortOrder:row?.itemSortOrder??null,
+      sellpiaPCode:row?.sellpiaCode||'',
+      ownCode:prod,
+      shortageQty:qty
+    });
+    const pickingRow=toPickingDbRow(csAlias);
+    delete pickingRow.is_checked;
+    delete pickingRow.drawer_no;
+    delete pickingRow.hold;
     await upsertOrReplaceByItem('picking',
-      {inv_no:inv,ord_no:_ord,item_no:row?.itemNo||code,item_sort_order:row?.itemSortOrder??null,sellpia_p_code:row?.sellpiaCode||'',p_code:prod,shortage_qty:qty},
+      pickingRow,
       {inv_no:inv,item_no:row?.itemNo||code}
     );
     for(const legacyCode of legacyMisongCodes(inv,code)){
