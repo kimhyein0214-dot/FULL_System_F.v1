@@ -1242,6 +1242,28 @@ const APP_CONFIG={
   dbMode:'supabase',
   supabaseUrl:'https://vgxocngpykhlkosiaeew.supabase.co',
   supabaseKey:'sb_publishable_XVnKGJo66GZiYTq5Ivu8dA_SjBVvX0g',
+  tablePresets:{
+    production:{
+      orders:'orders',
+      orderItems:'order_items',
+      picking:'picking',
+      shortage:'shortage',
+      inspection:'inspection',
+      products:'products',
+      holdItems:'hold_items',
+      syncLog:'sync_log'
+    },
+    staging:{
+      orders:'stg_orders',
+      orderItems:'stg_order_items',
+      picking:'stg_picking',
+      shortage:'stg_shortage',
+      inspection:'stg_inspection',
+      products:'products',
+      holdItems:'stg_hold_items',
+      syncLog:'stg_sync_log'
+    }
+  },
   tables:{
     orders:'orders',
     orderItems:'order_items',

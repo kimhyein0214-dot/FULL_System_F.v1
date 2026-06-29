@@ -122,6 +122,20 @@
       productionProjectRef: 'vgxocngpykhlkosiaeew',
       supabaseUrl: 'https://vgxocngpykhlkosiaeew.supabase.co',
       supabaseKey: 'sb_publishable_XVnKGJo66GZiYTq5Ivu8dA_SjBVvX0g',
+      tablePresets: {
+        production: {
+          orders: 'orders',
+          orderItems: 'order_items',
+          picking: 'picking',
+          shortage: 'shortage'
+        },
+        staging: {
+          orders: 'stg_orders',
+          orderItems: 'stg_order_items',
+          picking: 'stg_picking',
+          shortage: 'stg_shortage'
+        }
+      },
       tables: {
         orders: 'orders',
         orderItems: 'order_items',

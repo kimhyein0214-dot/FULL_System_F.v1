@@ -35,6 +35,49 @@ workflow stabilization before selected changes are moved back to production.
 6. Verify picking, shortage, inspection, gold labels, and PWA install mode.
 7. Only after the code is stable, plan DB column cleanup separately.
 
+## Staging Database Plan
+
+The stabilization app currently keeps production table names for reads but
+blocks production writes by default. This lets the UI load production-like data
+without risking accidental changes.
+
+Before testing write flows, create staging tables and switch the app configs to
+those table names.
+
+SQL plan:
+
+- `supabase/stabilization_staging_tables.sql`
+
+Recommended staging table names:
+
+| Production table | Staging table |
+| --- | --- |
+| `orders` | `stg_orders` |
+| `order_items` | `stg_order_items` |
+| `picking` | `stg_picking` |
+| `shortage` | `stg_shortage` |
+| `inspection` | `stg_inspection` |
+| `hold_items` | `stg_hold_items` |
+| `sync_log` | `stg_sync_log` |
+
+After the tables exist and Data API access is verified, update the app config:
+
+```js
+tables: {
+  orders: 'stg_orders',
+  orderItems: 'stg_order_items',
+  picking: 'stg_picking',
+  shortage: 'stg_shortage',
+  inspection: 'stg_inspection',
+  holdItems: 'stg_hold_items',
+  syncLog: 'stg_sync_log'
+}
+```
+
+Then set write allowance only for staging targets. Do not set
+`allowProductionWrites: true` while connected to the production project and
+production table names.
+
 ## Standard Internal Names
 
 | Meaning | Internal name | Current DB/source names |
