@@ -8,11 +8,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="피킹 시스템">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>피킹 시스템 0519</title>
+<title>피킹 시스템 0519 STABILIZATION</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="pwa-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="pwa-icon.svg">
-<link rel="stylesheet" href="picking-system_0519.css?v=0630-stabilization-workdate-v1">
+<link rel="stylesheet" href="picking-system_0519.css?v=0630-stabilization-stage-tables-v1">
 <!-- CSS moved to picking-system.css
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -1265,14 +1265,17 @@ const APP_CONFIG={
     }
   },
   tables:{
-    orders:'orders',
-    orderItems:'order_items',
-    picking:'picking',
-    shortage:'shortage',
-    inspection:'inspection',
+    orders:'stg_orders',
+    orderItems:'stg_order_items',
+    order_items:'stg_order_items',
+    picking:'stg_picking',
+    shortage:'stg_shortage',
+    inspection:'stg_inspection',
     products:'products',
-    holdItems:'hold_items',
-    syncLog:'sync_log'
+    holdItems:'stg_hold_items',
+    hold_items:'stg_hold_items',
+    syncLog:'stg_sync_log',
+    sync_log:'stg_sync_log'
   },
   imageCatalog:{
     enabled:true,
@@ -1340,7 +1343,13 @@ function dbHeaders(extra={}){
   return {apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',...extra};
 }
 function dbJoinPath(path,query=''){
-  return String(path||'').replace(/^\/+/,'')+(query?(String(query).startsWith('?')?query:'?'+query):'');
+  const raw=String(path||'').replace(/^\/+/,'');
+  const queryAt=raw.indexOf('?');
+  const pathPart=queryAt>=0?raw.slice(0,queryAt):raw;
+  const inlineQuery=queryAt>=0?raw.slice(queryAt):'';
+  const segments=pathPart.split('/');
+  if(segments[0]&&segments[0]!=='rpc') segments[0]=tableName(segments[0]);
+  return segments.join('/')+inlineQuery+(query?(String(query).startsWith('?')?query:'?'+query):'');
 }
 
 // Stabilization aliases: keep DB columns unchanged, but make app-side meaning explicit.

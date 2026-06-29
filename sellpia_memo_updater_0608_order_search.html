@@ -137,10 +137,11 @@
         }
       },
       tables: {
-        orders: 'orders',
-        orderItems: 'order_items',
-        picking: 'picking',
-        shortage: 'shortage'
+        orders: 'stg_orders',
+        orderItems: 'stg_order_items',
+        order_items: 'stg_order_items',
+        picking: 'stg_picking',
+        shortage: 'stg_shortage'
       },
       searchTimeout: 9000,
       detailTimeout: 9000,
@@ -182,13 +183,14 @@
     function dbTable(name) {
       return (CONFIG.tables && CONFIG.tables[name]) || name;
     }
+    const WRITE_GUARDED_TABLES = new Set(['orders', 'order_items', 'picking', 'shortage']);
     function isProductionDbTarget() {
       return String(CONFIG.supabaseUrl || '').includes(CONFIG.productionProjectRef || 'vgxocngpykhlkosiaeew');
     }
     function assertDbWriteAllowed(table, operation) {
       const resolved = dbTable(table);
       if (CONFIG.allowProductionWrites) return resolved;
-      if (isProductionDbTarget()) {
+      if (isProductionDbTarget() && WRITE_GUARDED_TABLES.has(resolved)) {
         throw new Error(`안정화 repo에서는 운영 DB 쓰기가 차단되었습니다: ${resolved}.${operation}`);
       }
       return resolved;
