@@ -1409,6 +1409,18 @@ function normalizeShortageRow(row={}){
     isGold:!!row.is_gold
   };
 }
+function normalizeInspectionRow(row={}){
+  return {
+    raw:row,
+    invoiceNo:String(row.inv_no||''),
+    sellpiaOrderNo:String(row.ord_no||''),
+    sellpiaItemNo:String(row.item_no||''),
+    ownCode:String(row.p_code||''),
+    inspectionMemo:String(row.insp_memo||''),
+    isInspected:!!row.passed,
+    memoUpdatedAt:String(row.memo_updated_at||'')
+  };
+}
 function toPickingDbRow(item={}){
   return {
     inv_no:item.invoiceNo,
@@ -1440,6 +1452,18 @@ function toShortageDbRow(item={}){
     status:item.status||'배송대기',
     updated_at:new Date().toISOString()
   };
+}
+function toInspectionDbRow(item={}){
+  const row={
+    inv_no:item.invoiceNo,
+    ord_no:item.sellpiaOrderNo,
+    item_no:item.sellpiaItemNo,
+    p_code:item.ownCode||item.sellpiaItemNo||''
+  };
+  if(Object.prototype.hasOwnProperty.call(item,'inspectionMemo')) row.insp_memo=item.inspectionMemo||'';
+  if(Object.prototype.hasOwnProperty.call(item,'isInspected')) row.passed=!!item.isInspected;
+  if(Object.prototype.hasOwnProperty.call(item,'memoUpdatedAt')) row.memo_updated_at=item.memoUpdatedAt||new Date().toISOString();
+  return row;
 }
 async function dbRequest(path,options={}){
   if(APP_CONFIG.dbMode==='supabase'){

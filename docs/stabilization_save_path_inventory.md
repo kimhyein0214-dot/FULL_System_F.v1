@@ -22,14 +22,14 @@ guesswork.
 | CS shortage edit | `updateCSShortage` | `picking` | Direct literal picking row | Candidate after CS row alias | Medium |
 | CS direct CSV upload | `uploadCSDirectData` | `shortage` | Minimal direct row | Needs dedicated adapter | Medium |
 | CS cleanup | `cleanSelectedCSDone`, `deleteMisongRow`, `cleanMisongDone` | `shortage` | Hard delete | Hold until soft-delete decision | High |
-| Inspection item memo | inspection memo timer | `inspection` | Direct upsert | Needs `toInspectionDbRow` | Medium |
+| Inspection item memo | inspection memo timer | `inspection` | Direct upsert | `toInspectionDbRow` added, not wired | Medium |
 | Inspection done marker | `toggleInspectionDone` | `inspection` | Direct `__done__` marker | Hold until inspection key strategy | Medium-high |
 | Inspection status transitions | `toggleInspectionDone` | `shortage`, `picking` | Direct status/hold updates | Hold, semantics sensitive | High |
 | Misong picking shortage | `saveMisongShortage` | `picking`, `shortage` | Direct literal rows | Candidate after status semantics split | Medium-high |
 
 ## Next Safe Refactor Order
 
-1. Add `toInspectionDbRow` without wiring it.
+1. Wire `insp_saveMemo` through `toInspectionDbRow` without changing its `inv_no,p_code` conflict key.
 2. Add small alias builders for CS/misong rows without changing writes.
 3. Convert `updateCSShortage` picking row next.
 4. Leave hard deletes and inspection status transitions until staging tables are live.
