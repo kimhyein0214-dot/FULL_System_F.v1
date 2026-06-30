@@ -56,6 +56,17 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function compactCode(value) {
+  return String(value || "")
+    .replace(/\s+/g, "")
+    .replace(/[()[\]{}]/g, "")
+    .toUpperCase();
+}
+
 function toast(message) {
   els.toast.textContent = message;
   els.toast.hidden = false;
@@ -100,11 +111,34 @@ function itemStateKey(invoice, item) {
 }
 
 function cleanOptionName(optionName, ownCode) {
-  let option = String(optionName || "").trim();
-  const code = String(ownCode || "").trim();
-  if (!code) return option;
-  option = option.replace(new RegExp(`\\[\\s*${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\]`, "g"), "");
-  return option.replace(/\s{2,}/g, " ").trim();
+  const rawOption = String(optionName || "").trim();
+  const rawCode = String(ownCode || "").trim();
+  if (!rawOption || !rawCode) return rawOption;
+
+  let option = rawOption;
+  const codeNoOuterBracket = rawCode.replace(/^\[(.*)\]$/, "$1").trim();
+  const candidates = [...new Set([rawCode, codeNoOuterBracket].filter(Boolean))];
+
+  for (const code of candidates) {
+    option = option.replace(new RegExp(`\\[\\s*${escapeRegExp(code)}\\s*\\]`, "gi"), "");
+    option = option.replace(new RegExp(escapeRegExp(code), "gi"), "");
+  }
+
+  const optionCompact = compactCode(option);
+  const codeCompact = compactCode(rawCode);
+  if (codeCompact && optionCompact.includes(codeCompact)) {
+    option = option
+      .split(/(\[[^\]]+\]|[A-Za-z가-힣]*[-_\s]*[A-Za-z0-9]+[-_\s][A-Za-z0-9_-]+)/g)
+      .filter((part) => compactCode(part) !== codeCompact)
+      .join("");
+  }
+
+  return option
+    .replace(/\[\s*\]/g, "")
+    .replace(/\s*,\s*,/g, ",")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s,/|·:：-]+|[\s,/|·:：-]+$/g, "")
+    .trim();
 }
 
 function invoiceStats(invoice) {
@@ -134,6 +168,21 @@ function sortInvoices(invoices) {
       aStats.qty - bStats.qty ||
       (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
       String(a.orderGroupNo).localeCompare(String(b.orderGroupNo), "ko")
+    );
+  });
+}
+
+function sortPickingRows(rows) {
+  if (!state.workSortMode) return rows;
+  return [...rows].sort((a, b) => {
+    const aItem = a.item;
+    const bItem = b.item;
+    return (
+      (aItem.sortOrder ?? 999999) - (bItem.sortOrder ?? 999999) ||
+      String(aItem.ownCode || "").localeCompare(String(bItem.ownCode || ""), "ko", { numeric: true }) ||
+      (aItem.itemOrderIndex ?? 999999) - (bItem.itemOrderIndex ?? 999999) ||
+      (a.invoice.sortOrder ?? 999999) - (b.invoice.sortOrder ?? 999999) ||
+      String(a.invoice.orderGroupNo).localeCompare(String(b.invoice.orderGroupNo), "ko")
     );
   });
 }
@@ -169,6 +218,12 @@ function currentVisibleInvoices() {
         .toLowerCase();
       return haystack.includes(search);
     });
+}
+
+function currentPickingRows() {
+  return sortPickingRows(
+    currentVisibleInvoices().flatMap((invoice) => (invoice.items || []).map((item) => ({ invoice, item }))),
+  );
 }
 
 function invoiceMatchesFilter(invoice, filterMode) {
@@ -246,79 +301,67 @@ function renderProgress(invoices) {
 
 function renderOrderList() {
   const invoices = currentVisibleInvoices();
+  const rows = currentPickingRows();
   renderProgress(invoices);
   els.panelSubtitle.textContent =
     state.searchText || state.filterMode !== "all"
-      ? `${filterLabel(state.filterMode)} · ${invoices.length}송장`
-      : `${state.currentGroup + 1}조 · ${invoices.length}송장`;
+      ? `${filterLabel(state.filterMode)} · ${rows.length}상품 / ${invoices.length}송장`
+      : `${state.currentGroup + 1}조 · ${rows.length}상품 / ${invoices.length}송장`;
 
   if (!state.viewModel) {
     els.orderList.innerHTML = '<div class="empty">데이터를 불러오는 중입니다.</div>';
     return;
   }
 
-  if (!invoices.length) {
-    els.orderList.innerHTML = '<div class="empty">표시할 주문이 없습니다.</div>';
+  if (!rows.length) {
+    els.orderList.innerHTML = '<div class="empty">표시할 상품이 없습니다.</div>';
     return;
   }
 
-  els.orderList.innerHTML = invoices.map(renderInvoice).join("");
+  els.orderList.innerHTML = rows.map(({ invoice, item }) => renderPickingRow(invoice, item)).join("");
 }
 
-function renderInvoice(invoice) {
-  const stats = invoiceStats(invoice);
-  const classes = ["order-card", stats.shortage ? "has-shortage" : "", stats.hold ? "has-hold" : ""].filter(Boolean).join(" ");
-  const totalBadge =
-    invoice.orderTotalAmount !== null
-      ? `<span class="small-badge total-badge">총금액 ${invoice.orderTotalAmount.toLocaleString("ko-KR")}</span>`
-      : "";
-
-  return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}">
-    <div class="order-head">
-      <div class="order-title">
-        <span class="work-no">${escapeHtml(invoice.invoiceNo || invoice.orderGroupNo || "-")}</span>
-        <span class="name">${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
-        ${invoice.seller ? `<span class="small-badge seller-badge">${escapeHtml(invoice.seller)}</span>` : ""}
-        ${totalBadge}
-      </div>
-      <div class="order-actions">
-        <span class="invoice-badge">${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
-        <input class="drawer-input" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(invoice.sellpiaMemo1 || invoice.items[0]?.pickingState?.drawerMemo || "")}" placeholder="서랍번호">
-      </div>
-    </div>
-    <div class="items">
-      ${invoice.items.map((item) => renderItem(invoice, item)).join("")}
-    </div>
-  </article>`;
-}
-
-function renderItem(invoice, item) {
-  const key = itemStateKey(invoice, item);
+function renderPickingRow(invoice, item) {
   const shortage = shortageQty(item);
   const checked = isPicked(item);
   const imageUrl = productImageUrl(item.sellpiaProductCode);
-  const option = cleanOptionName(item.optionName, item.ownCode) || item.ownCode || item.productName || "-";
+  const option = cleanOptionName(item.optionName, item.ownCode) || item.productName || "-";
   const product = item.productName || "";
+  const invoiceStatsValue = invoiceStats(invoice);
+  const classes = ["picking-item-card", checked ? "is-picked" : "", shortage ? "has-shortage" : "", isHold(item) ? "has-hold" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const drawerValue = invoice.sellpiaMemo1 || item.pickingState?.drawerMemo || "";
 
-  return `<div class="item-row" data-key="${escapeHtml(key)}">
+  return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">
     <button class="pick-check ${checked ? "checked" : ""}" data-action="toggle" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">${checked ? "✓" : ""}</button>
     ${imageUrl ? `<img class="thumb" src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<div class="thumb"></div>'}
-    <div class="item-main">
-      <p class="own-code-line">${escapeHtml(item.ownCode || "-")}</p>
-      <p class="option">${escapeHtml(option)}</p>
-      <p class="product">${escapeHtml(product)}</p>
-      <div class="code-line">
+    <div class="picking-main">
+      <div class="picking-title-line">
+        <span class="work-no own-code-display">${escapeHtml(item.ownCode || "-")}</span>
+        <span class="qty-badge">${Number(item.quantity) || 1}개</span>
         ${item.sellpiaProductCode ? `<span class="small-badge">${escapeHtml(item.sellpiaProductCode)}</span>` : ""}
         ${item.sellpiaLocation ? `<span class="small-badge">${escapeHtml(item.sellpiaLocation)}</span>` : ""}
       </div>
+      <p class="option">${escapeHtml(option)}</p>
+      <p class="product">${escapeHtml(product)}</p>
+      <div class="invoice-meta">
+        <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
+        <span>${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
+        <span>송장 ${invoiceStatsValue.picked}/${invoiceStatsValue.total}</span>
+        ${invoice.seller ? `<span>${escapeHtml(invoice.seller)}</span>` : ""}
+      </div>
     </div>
-    <div class="qty">${Number(item.quantity) || 1}개</div>
+    <div class="drawer-box">
+      <label>서랍</label>
+      <input class="drawer-input" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(drawerValue)}" placeholder="서랍번호">
+    </div>
     <div class="shortage-control">
       <button data-action="shortage" data-delta="-1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">−</button>
       <div class="shortage-value">${shortage}</div>
       <button data-action="shortage" data-delta="1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">+</button>
     </div>
-  </div>`;
+  </article>`;
 }
 
 function render() {

@@ -396,6 +396,98 @@ input {
   padding: 8px;
 }
 
+.picking-item-card {
+  display: grid;
+  grid-template-columns: 44px 92px minmax(360px, 1fr) 124px 144px;
+  gap: 10px;
+  align-items: center;
+  min-height: 104px;
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-left: 6px solid #3a9b68;
+  border-radius: 8px;
+  background: #effaf4;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+}
+
+.picking-item-card.is-picked {
+  background: #f5fbf7;
+}
+
+.picking-item-card.has-shortage {
+  border-left-color: var(--red);
+  background: #fff7f7;
+}
+
+.picking-item-card.has-hold {
+  border-left-color: var(--purple);
+  background: var(--purple-soft);
+}
+
+.picking-main {
+  min-width: 0;
+}
+
+.picking-title-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.own-code-display {
+  min-width: 126px;
+  max-width: 260px;
+  color: #111827;
+  line-height: 1.12;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.qty-badge {
+  border: 1px solid #c4d3ff;
+  border-radius: 6px;
+  background: #eff4ff;
+  color: #1f3f94;
+  padding: 3px 8px;
+  font-size: 13px;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.invoice-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.invoice-meta span {
+  border: 1px solid #d4dde8;
+  border-radius: 5px;
+  background: #f8fafc;
+  padding: 2px 6px;
+}
+
+.drawer-box {
+  display: grid;
+  gap: 4px;
+}
+
+.drawer-box label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .order-card {
   border: 1px solid var(--line);
   border-left: 6px solid #3a9b68;
@@ -670,5 +762,9 @@ input {
 
   .item-row {
     grid-template-columns: 42px 82px minmax(220px, 1fr) 56px 128px;
+  }
+
+  .picking-item-card {
+    grid-template-columns: 42px 82px minmax(300px, 1fr) 112px 128px;
   }
 }
