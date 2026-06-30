@@ -111,9 +111,18 @@ alter table public.sellpia_sync_queue enable row level security;
 -- The current production frontend already works with a browser publishable key.
 -- Keep these policies only for staging/prototype use. Replace with authenticated
 -- user policies before production hardening.
+revoke all privileges on table public.workflow_item_events from anon, authenticated;
+revoke all privileges on table public.workflow_invoice_events from anon, authenticated;
+revoke all privileges on table public.sellpia_sync_queue from anon, authenticated;
+
 grant select, insert, update on public.workflow_item_events to anon, authenticated;
 grant select, insert, update on public.workflow_invoice_events to anon, authenticated;
 grant select, insert, update on public.sellpia_sync_queue to anon, authenticated;
+
+revoke all privileges on sequence public.workflow_item_events_id_seq from anon, authenticated;
+revoke all privileges on sequence public.workflow_invoice_events_id_seq from anon, authenticated;
+revoke all privileges on sequence public.sellpia_sync_queue_id_seq from anon, authenticated;
+
 grant usage, select on sequence public.workflow_item_events_id_seq to anon, authenticated;
 grant usage, select on sequence public.workflow_invoice_events_id_seq to anon, authenticated;
 grant usage, select on sequence public.sellpia_sync_queue_id_seq to anon, authenticated;
