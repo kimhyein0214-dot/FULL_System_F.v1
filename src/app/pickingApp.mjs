@@ -12,12 +12,14 @@ const allowWorkflowEvents = allowWrites && params.get("events") === "1";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const state = {
+  activeTab: "picking",
   selectedDate: new Date().toISOString().slice(0, 10),
   session: "ALL",
   workSortMode: true,
   filterMode: "all",
   viewModel: null,
   groups: [],
+  groupInfos: [],
   currentGroup: 0,
   searchText: "",
   workflowEventsReady: false,
@@ -33,6 +35,9 @@ const els = {
   searchInput: document.getElementById("search-input"),
   filterBar: document.getElementById("filter-bar"),
   groupList: document.getElementById("group-list"),
+  pickingPanel: document.getElementById("picking-panel"),
+  dashboardPanel: document.getElementById("dashboard-panel"),
+  dashboardSummary: document.getElementById("dashboard-summary"),
   orderList: document.getElementById("order-list"),
   panelSubtitle: document.getElementById("panel-subtitle"),
   currentGroupLabel: document.getElementById("current-group-label"),
@@ -106,6 +111,37 @@ function isHold(item) {
   return Boolean(item.pickingState?.isHold || item.shortageState?.isHold);
 }
 
+function isGoldItem(item) {
+  const ownCode = String(item.ownCode || "").trim().toUpperCase();
+  const sellpiaCode = String(item.sellpiaProductCode || "").trim().toUpperCase();
+  const text = `${item.productName || ""} ${item.optionName || ""}`.toUpperCase();
+  return (
+    ownCode.startsWith("GPA") ||
+    ownCode.startsWith("GPB") ||
+    ownCode.includes("14K") ||
+    sellpiaCode.startsWith("GPA") ||
+    sellpiaCode.startsWith("GPB") ||
+    sellpiaCode.includes("14K") ||
+    text.includes("14K")
+  );
+}
+
+function invoiceHasGold(invoice) {
+  return (invoice.items || []).some(isGoldItem);
+}
+
+function invoiceDrawerValue(invoice) {
+  return String(
+    invoice.sellpiaMemo1 ||
+      (invoice.items || []).find((item) => String(item.pickingState?.drawerMemo || "").trim())?.pickingState?.drawerMemo ||
+      "",
+  ).trim();
+}
+
+function invoiceHasNoDrawer(invoice) {
+  return !invoiceDrawerValue(invoice);
+}
+
 function itemStateKey(invoice, item) {
   return `${invoice.orderGroupNo}::${item.sellpiaItemNo}`;
 }
@@ -177,6 +213,21 @@ function sortPickingRows(rows) {
   return [...rows].sort((a, b) => {
     const aItem = a.item;
     const bItem = b.item;
+    const aGold = invoiceHasGold(a.invoice);
+    const bGold = invoiceHasGold(b.invoice);
+    if (aGold && bGold) {
+      return (
+        (a.invoice.sortOrder ?? 999999) - (b.invoice.sortOrder ?? 999999) ||
+        String(a.invoice.orderGroupNo).localeCompare(String(b.invoice.orderGroupNo), "ko") ||
+        (aItem.itemOrderIndex ?? 999999) - (bItem.itemOrderIndex ?? 999999)
+      );
+    }
+    if (aGold !== bGold) {
+      return (
+        (a.invoice.sortOrder ?? 999999) - (b.invoice.sortOrder ?? 999999) ||
+        String(a.invoice.orderGroupNo).localeCompare(String(b.invoice.orderGroupNo), "ko")
+      );
+    }
     return (
       (aItem.sortOrder ?? 999999) - (bItem.sortOrder ?? 999999) ||
       String(aItem.ownCode || "").localeCompare(String(bItem.ownCode || ""), "ko", { numeric: true }) ||
@@ -190,8 +241,28 @@ function sortPickingRows(rows) {
 function rebuildGroups() {
   const invoices = sortInvoices(state.viewModel?.invoices || []);
   state.groups = [];
-  for (let index = 0; index < invoices.length; index += JO_SIZE) {
-    state.groups.push(invoices.slice(index, index + JO_SIZE));
+  state.groupInfos = [];
+
+  const addGroups = (rows, prefix, kind) => {
+    for (let index = 0; index < rows.length; index += JO_SIZE) {
+      state.groups.push(rows.slice(index, index + JO_SIZE));
+      state.groupInfos.push({ label: `${prefix}${Math.floor(index / JO_SIZE) + 1}조`, kind });
+    }
+  };
+
+  addGroups(
+    invoices.filter((invoice) => !invoiceHasGold(invoice)),
+    "",
+    "normal",
+  );
+  addGroups(
+    invoices.filter(invoiceHasGold),
+    "골드",
+    "gold",
+  );
+
+  if (!state.groups.length) {
+    state.groupInfos = [];
   }
   if (state.currentGroup >= state.groups.length) state.currentGroup = Math.max(0, state.groups.length - 1);
 }
@@ -230,6 +301,8 @@ function invoiceMatchesFilter(invoice, filterMode) {
   const stats = invoiceStats(invoice);
   if (filterMode === "todo") return stats.todo;
   if (filterMode === "shortage") return stats.shortage > 0;
+  if (filterMode === "nodrawer") return invoiceHasNoDrawer(invoice);
+  if (filterMode === "gold") return invoiceHasGold(invoice);
   if (filterMode === "hold") return stats.hold > 0;
   if (filterMode === "done") return stats.done;
   return true;
@@ -240,6 +313,8 @@ function filterLabel(filterMode) {
     all: "전체",
     todo: "미완료",
     shortage: "미송",
+    nodrawer: "서랍없음",
+    gold: "골드",
     hold: "보류",
     done: "완료",
   }[filterMode] || "전체";
@@ -258,9 +333,42 @@ function renderMetrics() {
   else els.metricEvents.textContent = state.workflowEventsReady ? "ON" : "미준비";
 }
 
+function renderDashboard() {
+  if (!els.dashboardSummary) return;
+  const invoices = state.viewModel?.invoices || [];
+  const items = invoices.flatMap((invoice) => invoice.items || []);
+  const picked = items.filter(isPicked).length;
+  const shortage = items.filter((item) => shortageQty(item) > 0).length;
+  const hold = items.filter(isHold).length;
+  const noDrawer = invoices.filter(invoiceHasNoDrawer).length;
+  const goldInvoices = invoices.filter(invoiceHasGold).length;
+  const goldItems = items.filter(isGoldItem).length;
+
+  const rows = [
+    ["전체 송장", `${invoices.length}건`],
+    ["전체 상품", `${items.length}개`],
+    ["피킹완료", `${picked}개`],
+    ["부족항목", `${shortage}개`],
+    ["보류", `${hold}개`],
+    ["서랍없음", `${noDrawer}건`],
+    ["골드 송장", `${goldInvoices}건`],
+    ["골드 상품", `${goldItems}개`],
+  ];
+
+  els.dashboardSummary.innerHTML = rows
+    .map(
+      ([label, value]) => `<div class="dashboard-stat">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>`,
+    )
+    .join("");
+}
+
 function renderGroups() {
   els.groupList.innerHTML = state.groups
     .map((group, index) => {
+      const info = state.groupInfos[index] || { label: `${index + 1}조`, kind: "normal" };
       const stats = group.reduce(
         (acc, invoice) => {
           const invoiceStat = invoiceStats(invoice);
@@ -271,11 +379,16 @@ function renderGroups() {
         },
         { total: 0, done: 0, shortage: 0 },
       );
-      const classes = ["group-btn", index === state.currentGroup ? "active" : "", stats.shortage ? "has-shortage" : ""]
+      const classes = [
+        "group-btn",
+        index === state.currentGroup ? "active" : "",
+        stats.shortage ? "has-shortage" : "",
+        info.kind === "gold" ? "is-gold" : "",
+      ]
         .filter(Boolean)
         .join(" ");
       return `<button class="${classes}" data-group="${index}">
-        <span>${index + 1}조</span>
+        <span>${escapeHtml(info.label)}</span>
         <span>${stats.done}/${stats.total}${stats.shortage ? ` · 미송 ${stats.shortage}` : ""}</span>
       </button>`;
     })
@@ -293,8 +406,9 @@ function renderProgress(invoices) {
   const done = items.filter(isPicked).length;
   const total = items.length;
   const pct = total ? Math.round((done / total) * 100) : 0;
+  const groupLabel = state.groupInfos[state.currentGroup]?.label || `${state.currentGroup + 1}조`;
   els.currentGroupLabel.textContent =
-    state.searchText || state.filterMode !== "all" ? filterLabel(state.filterMode) : `${state.currentGroup + 1}조`;
+    state.searchText || state.filterMode !== "all" ? filterLabel(state.filterMode) : groupLabel;
   els.progressText.textContent = `${done}/${total} 완료`;
   els.progressFill.style.width = `${pct}%`;
 }
@@ -303,10 +417,11 @@ function renderOrderList() {
   const invoices = currentVisibleInvoices();
   const rows = currentPickingRows();
   renderProgress(invoices);
+  const groupLabel = state.groupInfos[state.currentGroup]?.label || `${state.currentGroup + 1}조`;
   els.panelSubtitle.textContent =
     state.searchText || state.filterMode !== "all"
       ? `${filterLabel(state.filterMode)} · ${rows.length}상품 / ${invoices.length}송장`
-      : `${state.currentGroup + 1}조 · ${rows.length}상품 / ${invoices.length}송장`;
+      : `${groupLabel} · ${rows.length}상품 / ${invoices.length}송장`;
 
   if (!state.viewModel) {
     els.orderList.innerHTML = '<div class="empty">데이터를 불러오는 중입니다.</div>';
@@ -328,10 +443,18 @@ function renderPickingRow(invoice, item) {
   const option = cleanOptionName(item.optionName, item.ownCode) || item.productName || "-";
   const product = item.productName || "";
   const invoiceStatsValue = invoiceStats(invoice);
-  const classes = ["picking-item-card", checked ? "is-picked" : "", shortage ? "has-shortage" : "", isHold(item) ? "has-hold" : ""]
+  const goldItem = isGoldItem(item);
+  const goldInvoice = invoiceHasGold(invoice);
+  const classes = [
+    "picking-item-card",
+    checked ? "is-picked" : "",
+    shortage ? "has-shortage" : "",
+    isHold(item) ? "has-hold" : "",
+    goldItem ? "is-gold" : "",
+  ]
     .filter(Boolean)
     .join(" ");
-  const drawerValue = invoice.sellpiaMemo1 || item.pickingState?.drawerMemo || "";
+  const drawerValue = invoiceDrawerValue(invoice);
 
   return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">
     <button class="pick-check ${checked ? "checked" : ""}" data-action="toggle" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">${checked ? "✓" : ""}</button>
@@ -340,6 +463,7 @@ function renderPickingRow(invoice, item) {
       <div class="picking-title-line">
         <span class="work-no own-code-display">${escapeHtml(item.ownCode || "-")}</span>
         <span class="qty-badge">${Number(item.quantity) || 1}개</span>
+        ${goldItem ? '<span class="gold-badge">골드</span>' : goldInvoice ? '<span class="gold-badge soft">골드송장</span>' : ""}
         ${item.sellpiaProductCode ? `<span class="small-badge">${escapeHtml(item.sellpiaProductCode)}</span>` : ""}
         ${item.sellpiaLocation ? `<span class="small-badge">${escapeHtml(item.sellpiaLocation)}</span>` : ""}
       </div>
@@ -366,6 +490,7 @@ function renderPickingRow(invoice, item) {
 
 function render() {
   renderMetrics();
+  renderDashboard();
   renderFilters();
   renderGroups();
   renderOrderList();
@@ -574,7 +699,20 @@ async function loadPickingData() {
   render();
 }
 
+function setActiveTab(tab) {
+  state.activeTab = tab === "dashboard" ? "dashboard" : "picking";
+  document.querySelectorAll("[data-app-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.appTab === state.activeTab);
+  });
+  if (els.pickingPanel) els.pickingPanel.hidden = state.activeTab !== "picking";
+  if (els.dashboardPanel) els.dashboardPanel.hidden = state.activeTab !== "dashboard";
+  renderDashboard();
+}
+
 function bindEvents() {
+  document.querySelectorAll("[data-app-tab]").forEach((button) => {
+    button.addEventListener("click", () => setActiveTab(button.dataset.appTab));
+  });
   els.refreshBtn.addEventListener("click", () => loadPickingData().catch(showError));
   els.todayBtn.addEventListener("click", () => {
     state.selectedDate = new Date().toISOString().slice(0, 10);

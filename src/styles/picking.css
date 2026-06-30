@@ -47,7 +47,8 @@ input {
 .status-strip,
 .progress-panel,
 .sidebar,
-.work-panel {
+.work-panel,
+.dashboard-panel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -315,12 +316,40 @@ input {
   color: var(--red);
 }
 
+.group-btn.is-gold {
+  background: var(--amber-soft);
+  border-color: #e3b647;
+  color: #81540c;
+}
+
+.group-btn.is-gold.active {
+  background: #fff2b8;
+  border-color: #d89a00;
+  color: #6b3f00;
+}
+
 .work-panel {
   min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
+}
+
+.work-panel[hidden] {
+  display: none;
+}
+
+.dashboard-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.dashboard-panel[hidden] {
+  display: none;
 }
 
 .panel-head {
@@ -396,6 +425,69 @@ input {
   padding: 8px;
 }
 
+.dashboard-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.dashboard-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.dashboard-stat,
+.dashboard-card {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.dashboard-stat {
+  min-height: 72px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.dashboard-stat span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dashboard-stat strong {
+  font-size: 22px;
+  font-weight: 1000;
+}
+
+.dashboard-card {
+  padding: 14px;
+}
+
+.dashboard-card h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.dashboard-card p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .picking-item-card {
   display: grid;
   grid-template-columns: 44px 92px minmax(360px, 1fr) 124px 144px;
@@ -423,6 +515,15 @@ input {
 .picking-item-card.has-hold {
   border-left-color: var(--purple);
   background: var(--purple-soft);
+}
+
+.picking-item-card.is-gold {
+  border-left-color: #d89a00;
+  background: #fffbee;
+}
+
+.picking-item-card.is-gold.has-shortage {
+  background: #fff6ee;
 }
 
 .picking-main {
@@ -457,6 +558,22 @@ input {
   font-size: 13px;
   font-weight: 1000;
   white-space: nowrap;
+}
+
+.gold-badge {
+  border: 1px solid #e3b647;
+  border-radius: 6px;
+  background: #fff2b8;
+  color: #81540c;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.gold-badge.soft {
+  background: #fffaf0;
+  color: #996f1e;
 }
 
 .invoice-meta {
@@ -766,5 +883,9 @@ input {
 
   .picking-item-card {
     grid-template-columns: 42px 82px minmax(300px, 1fr) 112px 128px;
+  }
+
+  .dashboard-summary {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 }
