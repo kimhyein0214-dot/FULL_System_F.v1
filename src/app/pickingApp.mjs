@@ -21,6 +21,9 @@ const state = {
   groups: [],
   groupInfos: [],
   currentGroup: 0,
+  trayOpen: false,
+  trayExpanded: false,
+  currentTrayKey: "",
   searchText: "",
   workflowEventsReady: false,
   workflowEventsChecked: false,
@@ -43,6 +46,13 @@ const els = {
   currentGroupLabel: document.getElementById("current-group-label"),
   progressText: document.getElementById("progress-text"),
   progressFill: document.getElementById("progress-fill"),
+  bottomTray: document.getElementById("bottom-tray"),
+  trayHandle: document.getElementById("tray-handle"),
+  trayExpandBtn: document.getElementById("tray-expand-btn"),
+  trayLabel: document.getElementById("tray-label"),
+  trayCount: document.getElementById("tray-count"),
+  trayTitle: document.getElementById("tray-title"),
+  trayBoard: document.getElementById("tray-board"),
   metricOrders: document.getElementById("metric-orders"),
   metricPicked: document.getElementById("metric-picked"),
   metricShortage: document.getElementById("metric-shortage"),
@@ -297,6 +307,21 @@ function currentPickingRows() {
   );
 }
 
+function currentTrayInvoices() {
+  return currentVisibleInvoices();
+}
+
+function itemSlotKey(invoice, item) {
+  return `${invoice.orderGroupNo}::${item.sellpiaItemNo}`;
+}
+
+function itemStatusMeta(item) {
+  if (shortageQty(item) > 0) return { label: `미송 ${shortageQty(item)}`, className: "shortage" };
+  if (isHold(item)) return { label: "보류", className: "hold" };
+  if (isPicked(item)) return { label: "완료", className: "picked" };
+  return { label: "대기", className: "todo" };
+}
+
 function invoiceMatchesFilter(invoice, filterMode) {
   const stats = invoiceStats(invoice);
   if (filterMode === "todo") return stats.todo;
@@ -362,6 +387,81 @@ function renderDashboard() {
         <strong>${escapeHtml(value)}</strong>
       </div>`,
     )
+    .join("");
+}
+
+function renderTray() {
+  if (!els.trayBoard) return;
+  const invoices = currentTrayInvoices();
+  const rows = invoices.flatMap((invoice, invoiceIndex) =>
+    (invoice.items || []).map((item) => ({ invoice, item, invoiceIndex })),
+  );
+  const done = rows.filter(({ item }) => isPicked(item)).length;
+  const groupLabel =
+    state.searchText || state.filterMode !== "all"
+      ? filterLabel(state.filterMode)
+      : state.groupInfos[state.currentGroup]?.label || `${state.currentGroup + 1}조`;
+
+  els.bottomTray?.classList.toggle("open", state.trayOpen);
+  els.bottomTray?.classList.toggle("expanded", state.trayExpanded);
+  if (els.trayHandle) els.trayHandle.setAttribute("aria-expanded", String(state.trayOpen));
+  if (els.trayLabel) els.trayLabel.textContent = `${groupLabel} 상품 슬롯`;
+  if (els.trayTitle) els.trayTitle.textContent = `${groupLabel} 상품 슬롯`;
+  if (els.trayCount) els.trayCount.textContent = `${done}/${rows.length}`;
+  if (els.trayExpandBtn) els.trayExpandBtn.textContent = state.trayExpanded ? "접기" : "펼치기";
+
+  if (!rows.length) {
+    els.trayBoard.innerHTML = '<div class="tray-empty">표시할 상품이 없습니다.</div>';
+    return;
+  }
+
+  const slots = [[], [], [], []];
+  rows.forEach((row) => {
+    slots[Math.min(3, row.invoiceIndex % 4)].push(row);
+  });
+
+  els.trayBoard.innerHTML = slots
+    .map((slotRows, index) => {
+      const picked = slotRows.filter(({ item }) => isPicked(item)).length;
+      const shortage = slotRows.filter(({ item }) => shortageQty(item) > 0).length;
+      const firstInvoice = slotRows[0]?.invoice;
+      const title = firstInvoice
+        ? `${index + 1}번 · ${firstInvoice.displayName || firstInvoice.csDisplayName || firstInvoice.invoiceNo || ""}`
+        : `${index + 1}번`;
+      const body = slotRows.length
+        ? slotRows
+            .map(({ invoice, item }) => {
+              const meta = itemStatusMeta(item);
+              const key = itemSlotKey(invoice, item);
+              const classes = [
+                "tray-item",
+                meta.className,
+                key === state.currentTrayKey ? "selected" : "",
+                isGoldItem(item) ? "is-gold" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+              return `<button class="${classes}" data-tray-key="${escapeHtml(key)}" type="button">
+                <span class="tray-item-check">${isPicked(item) ? "✓" : ""}</span>
+                <span class="tray-item-main">
+                  <strong>${escapeHtml(item.ownCode || "-")}</strong>
+                  <small>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</small>
+                </span>
+                <span class="tray-item-qty">${Number(item.quantity) || 1}개</span>
+                <span class="tray-item-state">${escapeHtml(meta.label)}</span>
+              </button>`;
+            })
+            .join("")
+        : '<div class="tray-slot-empty">상품 없음</div>';
+      return `<section class="tray-slot">
+        <div class="tray-slot-head">
+          <span>${escapeHtml(title)}</span>
+          <strong>${picked}/${slotRows.length}</strong>
+          ${shortage ? `<em>미송 ${shortage}</em>` : ""}
+        </div>
+        <div class="tray-slot-list">${body}</div>
+      </section>`;
+    })
     .join("");
 }
 
@@ -445,18 +545,20 @@ function renderPickingRow(invoice, item) {
   const invoiceStatsValue = invoiceStats(invoice);
   const goldItem = isGoldItem(item);
   const goldInvoice = invoiceHasGold(invoice);
+  const slotKey = itemSlotKey(invoice, item);
   const classes = [
     "picking-item-card",
     checked ? "is-picked" : "",
     shortage ? "has-shortage" : "",
     isHold(item) ? "has-hold" : "",
     goldItem ? "is-gold" : "",
+    slotKey === state.currentTrayKey ? "is-selected" : "",
   ]
     .filter(Boolean)
     .join(" ");
   const drawerValue = invoiceDrawerValue(invoice);
 
-  return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">
+  return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" data-slot-key="${escapeHtml(slotKey)}">
     <button class="pick-check ${checked ? "checked" : ""}" data-action="toggle" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">${checked ? "✓" : ""}</button>
     ${imageUrl ? `<img class="thumb" src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<div class="thumb"></div>'}
     <div class="picking-main">
@@ -476,14 +578,14 @@ function renderPickingRow(invoice, item) {
         ${invoice.seller ? `<span>${escapeHtml(invoice.seller)}</span>` : ""}
       </div>
     </div>
-    <div class="drawer-box">
-      <label>서랍</label>
-      <input class="drawer-input" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(drawerValue)}" placeholder="서랍번호">
-    </div>
     <div class="shortage-control">
       <button data-action="shortage" data-delta="-1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">−</button>
       <div class="shortage-value">${shortage}</div>
       <button data-action="shortage" data-delta="1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">+</button>
+    </div>
+    <div class="drawer-box">
+      <label>서랍</label>
+      <input class="drawer-input" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(drawerValue)}" placeholder="서랍번호">
     </div>
   </article>`;
 }
@@ -494,6 +596,7 @@ function render() {
   renderFilters();
   renderGroups();
   renderOrderList();
+  renderTray();
 }
 
 function findInvoiceAndItem(orderGroupNo, sellpiaItemNo) {
@@ -709,6 +812,17 @@ function setActiveTab(tab) {
   renderDashboard();
 }
 
+function scrollToTrayItem(key) {
+  state.currentTrayKey = key;
+  renderOrderList();
+  renderTray();
+  const selectorKey = window.CSS?.escape ? CSS.escape(key) : key.replace(/"/g, '\\"');
+  const target = els.orderList.querySelector(`[data-slot-key="${selectorKey}"]`);
+  if (target) {
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+}
+
 function bindEvents() {
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     button.addEventListener("click", () => setActiveTab(button.dataset.appTab));
@@ -741,7 +855,7 @@ function bindEvents() {
   });
   els.searchInput.addEventListener("input", () => {
     state.searchText = els.searchInput.value;
-    renderOrderList();
+    render();
   });
   els.filterBar.addEventListener("click", (event) => {
     const button = event.target.closest("[data-filter]");
@@ -757,6 +871,22 @@ function bindEvents() {
   });
   els.orderList.addEventListener("click", (event) => onOrderListClick(event).catch(showError));
   els.orderList.addEventListener("change", onDrawerChange);
+  els.trayHandle?.addEventListener("click", () => {
+    state.trayOpen = !state.trayOpen;
+    renderTray();
+  });
+  els.trayExpandBtn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    state.trayOpen = true;
+    state.trayExpanded = !state.trayExpanded;
+    renderTray();
+  });
+  els.trayBoard?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-tray-key]");
+    if (!button) return;
+    state.trayOpen = true;
+    scrollToTrayItem(button.dataset.trayKey);
+  });
 }
 
 function showError(error) {
