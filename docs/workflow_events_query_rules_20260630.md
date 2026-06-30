@@ -57,3 +57,12 @@ Do not remove the current `shortage` table yet. First run F.v1 in parallel:
 | --- | --- |
 | `?write=1` | Allows the standalone picking tab to write to the existing `picking` table. |
 | `?write=1&events=1` | Also attempts to insert workflow item events. If event tables are not prepared, picking save still succeeds and the event failure is only reported as a warning. |
+
+## What The Operator Must Do
+
+Nothing is required for read-only testing.
+
+Before testing `?write=1&events=1`, run or approve
+`supabase/workflow_events_staging.sql` in the Supabase SQL Editor. Until that SQL
+is applied, the F.v1 page shows event status as `미준비` and skips event inserts
+while keeping the existing picking save path usable.

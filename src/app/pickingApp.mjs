@@ -20,6 +20,8 @@ const state = {
   groups: [],
   currentGroup: 0,
   searchText: "",
+  workflowEventsReady: false,
+  workflowEventsChecked: false,
   saving: new Set(),
 };
 
@@ -41,6 +43,7 @@ const els = {
   metricShortage: document.getElementById("metric-shortage"),
   metricHold: document.getElementById("metric-hold"),
   metricWrite: document.getElementById("metric-write"),
+  metricEvents: document.getElementById("metric-events"),
   toast: document.getElementById("toast"),
 };
 
@@ -187,6 +190,9 @@ function renderMetrics() {
   els.metricShortage.textContent = String(items.filter((item) => shortageQty(item) > 0).length);
   els.metricHold.textContent = String(items.filter(isHold).length);
   els.metricWrite.textContent = allowWorkflowEvents ? "EVENT" : allowWrites ? "ON" : "OFF";
+  if (!allowWorkflowEvents) els.metricEvents.textContent = "OFF";
+  else if (!state.workflowEventsChecked) els.metricEvents.textContent = "대기";
+  else els.metricEvents.textContent = state.workflowEventsReady ? "ON" : "미준비";
 }
 
 function renderGroups() {
@@ -359,9 +365,16 @@ async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
   if (!allowWorkflowEvents) return;
   const { error } = await db.from("workflow_item_events").insert(buildItemEvent(invoice, item, eventType, overrides));
   if (error) {
+    state.workflowEventsChecked = true;
+    state.workflowEventsReady = false;
+    renderMetrics();
     console.warn("workflow_item_events insert failed", error);
     toast("피킹 저장 완료 · 이벤트 테이블 미준비");
+    return;
   }
+  state.workflowEventsChecked = true;
+  state.workflowEventsReady = true;
+  renderMetrics();
 }
 
 async function savePickingRow(invoice, item, eventType = null, eventOverrides = {}) {
