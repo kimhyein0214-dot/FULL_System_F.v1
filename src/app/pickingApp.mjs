@@ -8,12 +8,14 @@ const JO_SIZE = 4;
 
 const params = new URLSearchParams(location.search);
 const allowWrites = params.get("write") === "1";
+const allowWorkflowEvents = allowWrites && params.get("events") === "1";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const state = {
   selectedDate: new Date().toISOString().slice(0, 10),
   session: "ALL",
   workSortMode: true,
+  filterMode: "all",
   viewModel: null,
   groups: [],
   currentGroup: 0,
@@ -27,6 +29,7 @@ const els = {
   todayBtn: document.getElementById("today-btn"),
   sortToggle: document.getElementById("sort-toggle"),
   searchInput: document.getElementById("search-input"),
+  filterBar: document.getElementById("filter-bar"),
   groupList: document.getElementById("group-list"),
   orderList: document.getElementById("order-list"),
   panelSubtitle: document.getElementById("panel-subtitle"),
@@ -95,11 +98,16 @@ function itemStateKey(invoice, item) {
 
 function invoiceStats(invoice) {
   const items = invoice.items || [];
+  const picked = items.filter(isPicked).length;
+  const shortage = items.filter((item) => shortageQty(item) > 0).length;
+  const hold = items.filter(isHold).length;
   return {
     total: items.length,
-    picked: items.filter(isPicked).length,
-    shortage: items.filter((item) => shortageQty(item) > 0).length,
-    hold: items.filter(isHold).length,
+    picked,
+    shortage,
+    hold,
+    done: items.length > 0 && picked === items.length && shortage === 0 && hold === 0,
+    todo: items.some((item) => !isPicked(item)) || shortage > 0 || hold > 0,
     qty: items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
   };
 }
@@ -130,21 +138,45 @@ function rebuildGroups() {
 
 function currentVisibleInvoices() {
   const search = state.searchText.trim().toLowerCase();
-  if (!search) return state.groups[state.currentGroup] || [];
-  return (state.viewModel?.invoices || []).filter((invoice) => {
-    const haystack = [
-      invoice.invoiceNo,
-      invoice.orderGroupNo,
-      invoice.displayName,
-      invoice.recipientName,
-      invoice.buyerName,
-      invoice.seller,
-      ...invoice.items.flatMap((item) => [item.ownCode, item.sellpiaProductCode, item.productName, item.optionName]),
-    ]
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(search);
-  });
+  const statusView = state.filterMode !== "all" || search;
+  const base = statusView ? sortInvoices(state.viewModel?.invoices || []) : state.groups[state.currentGroup] || [];
+
+  return base
+    .filter((invoice) => invoiceMatchesFilter(invoice, state.filterMode))
+    .filter((invoice) => {
+      if (!search) return true;
+      const haystack = [
+        invoice.invoiceNo,
+        invoice.orderGroupNo,
+        invoice.displayName,
+        invoice.recipientName,
+        invoice.buyerName,
+        invoice.seller,
+        ...invoice.items.flatMap((item) => [item.ownCode, item.sellpiaProductCode, item.productName, item.optionName]),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search);
+    });
+}
+
+function invoiceMatchesFilter(invoice, filterMode) {
+  const stats = invoiceStats(invoice);
+  if (filterMode === "todo") return stats.todo;
+  if (filterMode === "shortage") return stats.shortage > 0;
+  if (filterMode === "hold") return stats.hold > 0;
+  if (filterMode === "done") return stats.done;
+  return true;
+}
+
+function filterLabel(filterMode) {
+  return {
+    all: "전체",
+    todo: "미완료",
+    shortage: "미송",
+    hold: "보류",
+    done: "완료",
+  }[filterMode] || "전체";
 }
 
 function renderMetrics() {
@@ -154,7 +186,7 @@ function renderMetrics() {
   els.metricPicked.textContent = String(items.filter(isPicked).length);
   els.metricShortage.textContent = String(items.filter((item) => shortageQty(item) > 0).length);
   els.metricHold.textContent = String(items.filter(isHold).length);
-  els.metricWrite.textContent = allowWrites ? "ON" : "OFF";
+  els.metricWrite.textContent = allowWorkflowEvents ? "EVENT" : allowWrites ? "ON" : "OFF";
 }
 
 function renderGroups() {
@@ -181,12 +213,19 @@ function renderGroups() {
     .join("");
 }
 
+function renderFilters() {
+  els.filterBar.querySelectorAll("[data-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.filter === state.filterMode);
+  });
+}
+
 function renderProgress(invoices) {
   const items = invoices.flatMap((invoice) => invoice.items || []);
   const done = items.filter(isPicked).length;
   const total = items.length;
   const pct = total ? Math.round((done / total) * 100) : 0;
-  els.currentGroupLabel.textContent = state.searchText ? "검색" : `${state.currentGroup + 1}조`;
+  els.currentGroupLabel.textContent =
+    state.searchText || state.filterMode !== "all" ? filterLabel(state.filterMode) : `${state.currentGroup + 1}조`;
   els.progressText.textContent = `${done}/${total} 완료`;
   els.progressFill.style.width = `${pct}%`;
 }
@@ -194,9 +233,10 @@ function renderProgress(invoices) {
 function renderOrderList() {
   const invoices = currentVisibleInvoices();
   renderProgress(invoices);
-  els.panelSubtitle.textContent = state.searchText
-    ? `검색 결과 ${invoices.length}건`
-    : `${state.currentGroup + 1}조 · ${invoices.length}송장`;
+  els.panelSubtitle.textContent =
+    state.searchText || state.filterMode !== "all"
+      ? `${filterLabel(state.filterMode)} · ${invoices.length}송장`
+      : `${state.currentGroup + 1}조 · ${invoices.length}송장`;
 
   if (!state.viewModel) {
     els.orderList.innerHTML = '<div class="empty">데이터를 불러오는 중입니다.</div>';
@@ -266,6 +306,7 @@ function renderItem(invoice, item) {
 
 function render() {
   renderMetrics();
+  renderFilters();
   renderGroups();
   renderOrderList();
 }
@@ -293,7 +334,37 @@ function patchLocalPickingState(invoice, item, patch) {
   Object.assign(item.pickingState, patch);
 }
 
-async function savePickingRow(invoice, item) {
+function buildItemEvent(invoice, item, eventType, overrides = {}) {
+  return {
+    receipt_date: invoice.receiptDate || state.selectedDate,
+    order_group_no: invoice.orderGroupNo,
+    invoice_no: invoice.invoiceNo || "",
+    sellpia_item_no: item.sellpiaItemNo,
+    sellpia_product_code: item.sellpiaProductCode || "",
+    own_code: item.ownCode || "",
+    event_type: eventType,
+    quantity: overrides.quantity ?? null,
+    memo: overrides.memo || null,
+    drawer_memo: overrides.drawerMemo || item.pickingState?.drawerMemo || null,
+    actor: "front",
+    source: "f_v1_picking",
+    payload: {
+      productName: item.productName || "",
+      optionName: item.optionName || "",
+    },
+  };
+}
+
+async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
+  if (!allowWorkflowEvents) return;
+  const { error } = await db.from("workflow_item_events").insert(buildItemEvent(invoice, item, eventType, overrides));
+  if (error) {
+    console.warn("workflow_item_events insert failed", error);
+    toast("피킹 저장 완료 · 이벤트 테이블 미준비");
+  }
+}
+
+async function savePickingRow(invoice, item, eventType = null, eventOverrides = {}) {
   if (!allowWrites) {
     toast("읽기전용입니다. 저장 테스트는 ?write=1로 열어주세요.");
     return;
@@ -332,6 +403,7 @@ async function savePickingRow(invoice, item) {
       const { error } = await db.from("picking").insert(row);
       if (error) throw error;
     }
+    if (eventType) await saveWorkflowItemEvent(invoice, item, eventType, eventOverrides);
   } finally {
     state.saving.delete(key);
   }
@@ -340,7 +412,7 @@ async function savePickingRow(invoice, item) {
 async function saveDrawerForInvoice(invoice, drawerMemo) {
   for (const item of invoice.items || []) {
     patchLocalPickingState(invoice, item, { drawerMemo });
-    await savePickingRow(invoice, item);
+    await savePickingRow(invoice, item, null, { drawerMemo });
   }
 }
 
@@ -358,7 +430,7 @@ async function onOrderListClick(event) {
     patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
     render();
     try {
-      await savePickingRow(invoice, item);
+      await savePickingRow(invoice, item, isPicked(item) ? "picked" : "pick_unchecked");
       toast("피킹 상태 저장");
     } catch (error) {
       patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
@@ -369,11 +441,20 @@ async function onOrderListClick(event) {
 
   if (action === "shortage") {
     const delta = Number(target.dataset.delta || 0);
-    const next = Math.max(0, shortageQty(item) + delta);
+    const prev = shortageQty(item);
+    const next = Math.max(0, prev + delta);
+    const eventType =
+      delta > 0 && prev === 0
+        ? "shortage_created"
+        : next === 0 && prev > 0
+          ? "shortage_repick_completed"
+          : next !== prev
+            ? "shortage_qty_changed"
+            : null;
     patchLocalPickingState(invoice, item, { shortageQty: next });
     render();
     try {
-      await savePickingRow(invoice, item);
+      await savePickingRow(invoice, item, eventType, { quantity: next });
       toast("부족수량 저장");
     } catch (error) {
       patchLocalPickingState(invoice, item, { shortageQty: Math.max(0, next - delta) });
@@ -456,6 +537,12 @@ function bindEvents() {
   els.searchInput.addEventListener("input", () => {
     state.searchText = els.searchInput.value;
     renderOrderList();
+  });
+  els.filterBar.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-filter]");
+    if (!button) return;
+    state.filterMode = button.dataset.filter;
+    render();
   });
   els.groupList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-group]");

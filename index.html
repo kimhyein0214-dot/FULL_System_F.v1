@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FULL_System_F.v1 Picking</title>
     <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pretendard/1.3.9/static/pretendard.css">
     <link rel="stylesheet" href="src/styles/picking.css">
   </head>
   <body>
@@ -60,7 +62,16 @@
               <h2 id="panel-title">자사코드별 주문서</h2>
               <p id="panel-subtitle">데이터 로딩 전</p>
             </div>
-            <input id="search-input" class="search" placeholder="송장번호 / 자사코드 / 주문자 / 수취인">
+            <div class="panel-tools">
+              <div id="filter-bar" class="filter-bar" aria-label="피킹 필터">
+                <button class="filter-chip active" data-filter="all">전체</button>
+                <button class="filter-chip" data-filter="todo">미완료</button>
+                <button class="filter-chip" data-filter="shortage">미송</button>
+                <button class="filter-chip" data-filter="hold">보류</button>
+                <button class="filter-chip" data-filter="done">완료</button>
+              </div>
+              <input id="search-input" class="search" placeholder="송장번호 / 자사코드 / 주문자 / 수취인">
+            </div>
           </div>
           <div id="order-list" class="order-list"></div>
         </section>

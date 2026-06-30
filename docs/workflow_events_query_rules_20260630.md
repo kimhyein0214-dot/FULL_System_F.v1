@@ -50,3 +50,10 @@ Do not remove the current `shortage` table yet. First run F.v1 in parallel:
 3. Compare old shortage screen counts with event-derived counts.
 4. Switch screens to event-derived queries after counts match.
 5. Move Sellpia memo updater to `sellpia_sync_queue`.
+
+## F.v1 Picking Test Flags
+
+| URL flag | Effect |
+| --- | --- |
+| `?write=1` | Allows the standalone picking tab to write to the existing `picking` table. |
+| `?write=1&events=1` | Also attempts to insert workflow item events. If event tables are not prepared, picking save still succeeds and the event failure is only reported as a warning. |
