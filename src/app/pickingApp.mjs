@@ -851,12 +851,21 @@ function scrollToTrayItem(key) {
   }
 }
 
+function scrollTrayToSelectedItem(key) {
+  const selectorKey = window.CSS?.escape ? CSS.escape(key) : key.replace(/"/g, '\\"');
+  const target = els.trayBoard?.querySelector(`[data-tray-key="${selectorKey}"]`);
+  if (target) {
+    target.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  }
+}
+
 function selectPickingCard(key) {
   state.currentTrayKey = key;
   els.orderList.querySelectorAll("[data-slot-key]").forEach((card) => {
     card.classList.toggle("is-selected", card.dataset.slotKey === key);
   });
   renderTray();
+  scrollTrayToSelectedItem(key);
 }
 
 function bindEvents() {
