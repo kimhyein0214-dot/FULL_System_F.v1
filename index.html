@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pretendard/1.3.9/static/pretendard.css">
-    <link rel="stylesheet" href="src/styles/picking.css?v=20260630-tray-color1">
+    <link rel="stylesheet" href="src/styles/picking.css?v=20260630-layout-tabs1">
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -51,6 +51,8 @@
           <nav class="tabs">
             <button class="tab" data-app-tab="dashboard">대시보드</button>
             <button class="tab active" data-app-tab="picking">피킹</button>
+            <button class="tab" data-app-tab="shortage">미송피킹</button>
+            <button class="tab" data-app-tab="inspection">검품</button>
           </nav>
           <div class="side-section">
             <div class="side-title">조 이동</div>
@@ -118,6 +120,77 @@
             </div>
           </div>
         </section>
+
+        <section id="shortage-panel" class="workflow-panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h2>미송피킹</h2>
+              <p>입고/미송 대상 상품을 피킹하는 화면 뼈대입니다.</p>
+            </div>
+            <div class="panel-tools">
+              <button class="filter-chip active" type="button">전체</button>
+              <button class="filter-chip" type="button">자사코드별</button>
+              <button class="filter-chip" type="button">서랍입력</button>
+              <button class="filter-chip" type="button">피킹완료</button>
+            </div>
+          </div>
+          <div class="workflow-layout">
+            <aside class="workflow-list">
+              <div class="workflow-list-head">
+                <strong>대상 목록</strong>
+                <span>레이아웃 준비중</span>
+              </div>
+              <div class="workflow-empty">데이터 구조 확정 후 미송 대상이 연결됩니다.</div>
+            </aside>
+            <section class="workflow-detail">
+              <div class="workflow-placeholder">
+                <strong>미송 상품 상세</strong>
+                <p>사진, 자사코드, 옵션명, 부족수량, 서랍번호, 송장 정보를 이 영역에 배치합니다.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="inspection-panel" class="workflow-panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h2>검품</h2>
+              <p>송장 단위 검품 화면 뼈대입니다.</p>
+            </div>
+            <div class="panel-tools">
+              <button class="filter-chip active" type="button">전체</button>
+              <button class="filter-chip" type="button">미완료</button>
+              <button class="filter-chip" type="button">골드</button>
+              <button class="filter-chip" type="button">미송</button>
+              <button class="filter-chip" type="button">보류</button>
+            </div>
+          </div>
+          <div class="workflow-layout inspection-layout">
+            <aside class="workflow-list">
+              <div class="workflow-list-head">
+                <strong>송장 목록</strong>
+                <span>레이아웃 준비중</span>
+              </div>
+              <div class="workflow-empty">미송피킹 완료 송장과 일반 검품 송장을 이 영역에 표시합니다.</div>
+            </aside>
+            <section class="workflow-detail">
+              <div class="inspection-header-skeleton">
+                <div>
+                  <strong>선택 송장</strong>
+                  <span>송장번호 / 주문자 / 판매처</span>
+                </div>
+                <div class="inspection-actions">
+                  <button class="btn" type="button" disabled>보류 처리</button>
+                  <button class="btn primary" type="button" disabled>완료 처리</button>
+                </div>
+              </div>
+              <div class="workflow-placeholder">
+                <strong>송장 전체 상품</strong>
+                <p>상품 전체 리스트, 미송/보류/메모 배지, 검품 메모칸을 이 영역에 배치합니다.</p>
+              </div>
+            </section>
+          </div>
+        </section>
       </main>
 
       <section id="bottom-tray" class="bottom-tray">
@@ -140,6 +213,6 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="src/app/pickingApp.mjs?v=20260630-tray-color1"></script>
+    <script type="module" src="src/app/pickingApp.mjs?v=20260630-layout-tabs1"></script>
   </body>
 </html>

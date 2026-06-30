@@ -49,6 +49,7 @@ input {
 .sidebar,
 .work-panel,
 .dashboard-panel,
+.workflow-panel,
 .bottom-tray {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -404,6 +405,18 @@ input {
   display: none;
 }
 
+.workflow-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.workflow-panel[hidden] {
+  display: none;
+}
+
 .panel-head {
   min-height: 56px;
   display: flex;
@@ -537,6 +550,114 @@ input {
 .dashboard-actions {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflow-layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.inspection-layout {
+  grid-template-columns: 360px minmax(0, 1fr);
+}
+
+.workflow-list {
+  min-height: 0;
+  border-right: 1px solid var(--line-soft);
+  background: #f8fafc;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.workflow-list-head {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.workflow-list-head strong {
+  font-size: 14px;
+  font-weight: 1000;
+}
+
+.workflow-list-head span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workflow-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.workflow-placeholder,
+.workflow-empty {
+  border: 1px dashed #b8c3d3;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 18px;
+  font-weight: 900;
+}
+
+.workflow-placeholder strong {
+  display: block;
+  color: #111827;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.workflow-placeholder p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.workflow-empty {
+  margin: 12px;
+  text-align: center;
+}
+
+.inspection-header-skeleton {
+  min-height: 58px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.inspection-header-skeleton strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 1000;
+}
+
+.inspection-header-skeleton span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.inspection-actions {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
@@ -808,6 +929,36 @@ input {
   border: 1px solid #b7e0c5;
   background: #ecfdf3;
   color: #21794c;
+}
+
+.seller-tone-1 {
+  border-color: #b7e0c5;
+  background: #ecfdf3;
+  color: #21794c;
+}
+
+.seller-tone-2 {
+  border-color: #c4d3ff;
+  background: #eff4ff;
+  color: #1f55c5;
+}
+
+.seller-tone-3 {
+  border-color: #e7c67b;
+  background: #fff8df;
+  color: #8a5b12;
+}
+
+.seller-tone-4 {
+  border-color: #d6c5ff;
+  background: #f2e9ff;
+  color: #6d3ac7;
+}
+
+.seller-tone-5 {
+  border-color: #f3b5b5;
+  background: #fff1f1;
+  color: #c43434;
 }
 
 .total-badge {

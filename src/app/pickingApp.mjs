@@ -46,6 +46,8 @@ const els = {
   jumpInvoiceBtn: document.getElementById("jump-invoice-btn"),
   pickingPanel: document.getElementById("picking-panel"),
   dashboardPanel: document.getElementById("dashboard-panel"),
+  shortagePanel: document.getElementById("shortage-panel"),
+  inspectionPanel: document.getElementById("inspection-panel"),
   dashboardSummary: document.getElementById("dashboard-summary"),
   orderList: document.getElementById("order-list"),
   panelSubtitle: document.getElementById("panel-subtitle"),
@@ -86,6 +88,22 @@ function compactCode(value) {
     .replace(/\s+/g, "")
     .replace(/[()[\]{}]/g, "")
     .toUpperCase();
+}
+
+function codeCompareKey(value) {
+  return String(value || "")
+    .replace(/[\s()[\]{}]/g, "")
+    .replace(/[^0-9A-Z_-]/gi, "")
+    .toUpperCase();
+}
+
+function ownCodeCandidates(ownCode) {
+  const raw = String(ownCode || "").trim();
+  const withoutPrefix = raw.replace(/^\[[^\]]+\]\s*/, "").trim();
+  const noBrackets = raw.replace(/[\[\]{}()]/g, "").trim();
+  const compact = codeCompareKey(raw);
+  const withoutPrefixCompact = codeCompareKey(withoutPrefix);
+  return [...new Set([raw, withoutPrefix, noBrackets, compact, withoutPrefixCompact].filter(Boolean))];
 }
 
 function onlyDigits(value) {
@@ -172,28 +190,23 @@ function cleanOptionName(optionName, ownCode) {
   if (!rawOption || !rawCode) return rawOption;
 
   let option = rawOption;
-  const codeNoOuterBracket = rawCode.replace(/^\[(.*)\]$/, "$1").trim();
-  const candidates = [...new Set([rawCode, codeNoOuterBracket].filter(Boolean))];
+  const candidates = ownCodeCandidates(rawCode);
+  const candidateKeys = new Set(candidates.map(codeCompareKey).filter(Boolean));
+
+  option = option.replace(/\[([^\]]+)\]/g, (match, inner) => {
+    const innerKey = codeCompareKey(inner);
+    return candidateKeys.has(innerKey) ? "" : match;
+  });
 
   for (const code of candidates) {
-    option = option.replace(new RegExp(`\\[\\s*${escapeRegExp(code)}\\s*\\]`, "gi"), "");
     option = option.replace(new RegExp(escapeRegExp(code), "gi"), "");
-  }
-
-  const optionCompact = compactCode(option);
-  const codeCompact = compactCode(rawCode);
-  if (codeCompact && optionCompact.includes(codeCompact)) {
-    option = option
-      .split(/(\[[^\]]+\]|[A-Za-z가-힣]*[-_\s]*[A-Za-z0-9]+[-_\s][A-Za-z0-9_-]+)/g)
-      .filter((part) => compactCode(part) !== codeCompact)
-      .join("");
   }
 
   return option
     .replace(/\[\s*\]/g, "")
     .replace(/\s*,\s*,/g, ",")
     .replace(/\s{2,}/g, " ")
-    .replace(/^[\s,/|·:：-]+|[\s,/|·:：-]+$/g, "")
+    .replace(/^[\s,/|:>-]+|[\s,/|:>-]+$/g, "")
     .trim();
 }
 
@@ -351,6 +364,13 @@ function itemStatusMeta(item) {
   if (isHold(item)) return { label: "보류", className: "hold" };
   if (isPicked(item)) return { label: "완료", className: "picked" };
   return { label: "대기", className: "todo" };
+}
+
+function sellerTone(seller) {
+  const text = String(seller || "");
+  let hash = 0;
+  for (const char of text) hash = (hash + char.charCodeAt(0)) % 5;
+  return `seller-tone-${hash + 1}`;
 }
 
 function invoiceMatchesFilter(invoice, filterMode) {
@@ -573,7 +593,6 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
   const imageUrl = productImageUrl(item.sellpiaProductCode);
   const option = cleanOptionName(item.optionName, item.ownCode) || item.productName || "-";
   const product = item.productName || "";
-  const invoiceStatsValue = invoiceStats(invoice);
   const goldItem = isGoldItem(item);
   const goldInvoice = invoiceHasGold(invoice);
   const slotKey = itemSlotKey(invoice, item);
@@ -599,7 +618,6 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
         <div class="picking-title-line">
           <span class="work-no own-code-display">${escapeHtml(item.ownCode || "-")}</span>
           ${goldItem ? '<span class="gold-badge">골드</span>' : goldInvoice ? '<span class="gold-badge soft">골드송장</span>' : ""}
-          ${item.sellpiaProductCode ? `<span class="small-badge">${escapeHtml(item.sellpiaProductCode)}</span>` : ""}
           ${item.sellpiaLocation ? `<span class="small-badge">${escapeHtml(item.sellpiaLocation)}</span>` : ""}
         </div>
         <p class="option">${escapeHtml(option)}</p>
@@ -607,8 +625,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
         <div class="invoice-meta">
           <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
           <span>${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
-          <span>송장 ${invoiceStatsValue.picked}/${invoiceStatsValue.total}</span>
-          ${invoice.seller ? `<span>${escapeHtml(invoice.seller)}</span>` : ""}
+          ${invoice.seller ? `<span class="seller-badge ${sellerTone(invoice.seller)}">${escapeHtml(invoice.seller)}</span>` : ""}
         </div>
       </div>
       <div class="picking-controls">
@@ -841,12 +858,15 @@ async function loadPickingData() {
 }
 
 function setActiveTab(tab) {
-  state.activeTab = tab === "dashboard" ? "dashboard" : "picking";
+  const allowedTabs = new Set(["dashboard", "picking", "shortage", "inspection"]);
+  state.activeTab = allowedTabs.has(tab) ? tab : "picking";
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.appTab === state.activeTab);
   });
   if (els.pickingPanel) els.pickingPanel.hidden = state.activeTab !== "picking";
   if (els.dashboardPanel) els.dashboardPanel.hidden = state.activeTab !== "dashboard";
+  if (els.shortagePanel) els.shortagePanel.hidden = state.activeTab !== "shortage";
+  if (els.inspectionPanel) els.inspectionPanel.hidden = state.activeTab !== "inspection";
   renderDashboard();
 }
 
