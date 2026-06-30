@@ -491,9 +491,9 @@ input {
 
 .picking-item-card {
   display: grid;
-  grid-template-columns: 44px 168px minmax(320px, 1fr) 144px 124px;
+  grid-template-columns: 172px minmax(0, 1fr);
   gap: 12px;
-  align-items: center;
+  align-items: stretch;
   min-height: 154px;
   margin-bottom: 8px;
   padding: 9px 10px;
@@ -533,8 +533,22 @@ input {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 
+.thumb-wrap {
+  position: relative;
+  width: 168px;
+  min-height: 136px;
+  align-self: center;
+}
+
 .picking-main {
   min-width: 0;
+}
+
+.picking-body {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 .picking-title-line {
@@ -565,6 +579,68 @@ input {
   font-size: 13px;
   font-weight: 1000;
   white-space: nowrap;
+}
+
+.qty-tile {
+  width: 96px;
+  height: 66px;
+  border: 2px solid #b9c8ff;
+  border-radius: 7px;
+  background: #eef2ff;
+  color: #1f3f94;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.invoice-slots {
+  width: 230px;
+  height: 66px;
+  border: 1px solid #d3dce8;
+  border-radius: 7px;
+  background: #f8fafc;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  padding: 16px 7px 7px;
+}
+
+.invoice-slot {
+  position: relative;
+  min-width: 0;
+  border: 2px solid #d5c6ad;
+  border-radius: 7px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.invoice-slot span {
+  position: absolute;
+  top: -18px;
+  left: 0;
+  right: 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 1000;
+  text-align: center;
+}
+
+.invoice-slot strong {
+  color: #17804a;
+  font-size: 20px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.invoice-slot.active {
+  border-color: #75c58f;
+  background: #ddf8e8;
+  box-shadow: inset 0 0 0 2px rgba(21, 148, 91, 0.12);
 }
 
 .gold-badge {
@@ -604,6 +680,7 @@ input {
 .drawer-box {
   display: grid;
   gap: 4px;
+  align-content: center;
 }
 
 .drawer-box label {
@@ -726,6 +803,13 @@ input {
   cursor: pointer;
 }
 
+.thumb-wrap .pick-check {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 2;
+}
+
 .pick-check.checked {
   background: #48bf70;
   border-color: #48bf70;
@@ -819,6 +903,14 @@ input {
   color: #64748b;
   font-size: 22px;
   font-weight: 1000;
+}
+
+.picking-controls {
+  display: grid;
+  grid-template-columns: 96px 230px 144px 124px;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
 }
 
 .bottom-tray {
@@ -1133,13 +1225,33 @@ input {
   }
 
   .picking-item-card {
-    grid-template-columns: 42px 144px minmax(260px, 1fr) 128px 112px;
+    grid-template-columns: 148px minmax(0, 1fr);
     min-height: 136px;
+  }
+
+  .thumb-wrap {
+    width: 144px;
+    min-height: 116px;
   }
 
   .thumb {
     width: 144px;
     height: 116px;
+  }
+
+  .picking-controls {
+    grid-template-columns: 84px 204px 128px 112px;
+  }
+
+  .qty-tile {
+    width: 84px;
+    height: 58px;
+    font-size: 24px;
+  }
+
+  .invoice-slots {
+    width: 204px;
+    height: 58px;
   }
 
   .dashboard-summary {

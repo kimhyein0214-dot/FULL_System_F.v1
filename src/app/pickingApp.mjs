@@ -303,7 +303,9 @@ function currentVisibleInvoices() {
 
 function currentPickingRows() {
   return sortPickingRows(
-    currentVisibleInvoices().flatMap((invoice) => (invoice.items || []).map((item) => ({ invoice, item }))),
+    currentVisibleInvoices().flatMap((invoice, invoiceIndex) =>
+      (invoice.items || []).map((item, itemIndex) => ({ invoice, item, invoiceIndex, itemIndex })),
+    ),
   );
 }
 
@@ -313,6 +315,25 @@ function currentTrayInvoices() {
 
 function itemSlotKey(invoice, item) {
   return `${invoice.orderGroupNo}::${item.sellpiaItemNo}`;
+}
+
+function itemOrderNo(itemIndex = 0) {
+  return itemIndex + 1;
+}
+
+function renderInvoiceSlots(invoiceIndex, item, itemIndex) {
+  const activeSlot = (invoiceIndex % JO_SIZE) + 1;
+  const orderNo = itemOrderNo(itemIndex);
+  return `<div class="invoice-slots" aria-label="조 배치 슬롯">
+    ${Array.from({ length: JO_SIZE }, (_, index) => {
+      const slotNo = index + 1;
+      const active = slotNo === activeSlot;
+      return `<div class="invoice-slot ${active ? "active" : ""}">
+        <span>${slotNo}</span>
+        <strong>${active ? escapeHtml(orderNo) : ""}</strong>
+      </div>`;
+    }).join("")}
+  </div>`;
 }
 
 function itemStatusMeta(item) {
@@ -533,10 +554,10 @@ function renderOrderList() {
     return;
   }
 
-  els.orderList.innerHTML = rows.map(({ invoice, item }) => renderPickingRow(invoice, item)).join("");
+  els.orderList.innerHTML = rows.map(({ invoice, item, invoiceIndex, itemIndex }) => renderPickingRow(invoice, item, invoiceIndex, itemIndex)).join("");
 }
 
-function renderPickingRow(invoice, item) {
+function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
   const shortage = shortageQty(item);
   const checked = isPicked(item);
   const imageUrl = productImageUrl(item.sellpiaProductCode);
@@ -559,33 +580,40 @@ function renderPickingRow(invoice, item) {
   const drawerValue = invoiceDrawerValue(invoice);
 
   return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" data-slot-key="${escapeHtml(slotKey)}">
-    <button class="pick-check ${checked ? "checked" : ""}" data-action="toggle" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">${checked ? "✓" : ""}</button>
-    ${imageUrl ? `<img class="thumb" src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<div class="thumb"></div>'}
-    <div class="picking-main">
-      <div class="picking-title-line">
-        <span class="work-no own-code-display">${escapeHtml(item.ownCode || "-")}</span>
-        <span class="qty-badge">${Number(item.quantity) || 1}개</span>
-        ${goldItem ? '<span class="gold-badge">골드</span>' : goldInvoice ? '<span class="gold-badge soft">골드송장</span>' : ""}
-        ${item.sellpiaProductCode ? `<span class="small-badge">${escapeHtml(item.sellpiaProductCode)}</span>` : ""}
-        ${item.sellpiaLocation ? `<span class="small-badge">${escapeHtml(item.sellpiaLocation)}</span>` : ""}
-      </div>
-      <p class="option">${escapeHtml(option)}</p>
-      <p class="product">${escapeHtml(product)}</p>
-      <div class="invoice-meta">
-        <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
-        <span>${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
-        <span>송장 ${invoiceStatsValue.picked}/${invoiceStatsValue.total}</span>
-        ${invoice.seller ? `<span>${escapeHtml(invoice.seller)}</span>` : ""}
-      </div>
+    <div class="thumb-wrap">
+      <button class="pick-check ${checked ? "checked" : ""}" data-action="toggle" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">${checked ? "✓" : ""}</button>
+      ${imageUrl ? `<img class="thumb" src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<div class="thumb"></div>'}
     </div>
-    <div class="shortage-control">
-      <button data-action="shortage" data-delta="-1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">−</button>
-      <div class="shortage-value">${shortage}</div>
-      <button data-action="shortage" data-delta="1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">+</button>
-    </div>
-    <div class="drawer-box">
-      <label>서랍</label>
-      <input class="drawer-input" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(drawerValue)}" placeholder="서랍번호">
+    <div class="picking-body">
+      <div class="picking-main">
+        <div class="picking-title-line">
+          <span class="work-no own-code-display">${escapeHtml(item.ownCode || "-")}</span>
+          ${goldItem ? '<span class="gold-badge">골드</span>' : goldInvoice ? '<span class="gold-badge soft">골드송장</span>' : ""}
+          ${item.sellpiaProductCode ? `<span class="small-badge">${escapeHtml(item.sellpiaProductCode)}</span>` : ""}
+          ${item.sellpiaLocation ? `<span class="small-badge">${escapeHtml(item.sellpiaLocation)}</span>` : ""}
+        </div>
+        <p class="option">${escapeHtml(option)}</p>
+        <p class="product">${escapeHtml(product)}</p>
+        <div class="invoice-meta">
+          <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
+          <span>${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
+          <span>송장 ${invoiceStatsValue.picked}/${invoiceStatsValue.total}</span>
+          ${invoice.seller ? `<span>${escapeHtml(invoice.seller)}</span>` : ""}
+        </div>
+      </div>
+      <div class="picking-controls">
+        <div class="qty-tile">${Number(item.quantity) || 1}개</div>
+        ${renderInvoiceSlots(invoiceIndex, item, itemIndex)}
+        <div class="shortage-control">
+          <button data-action="shortage" data-delta="-1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">−</button>
+          <div class="shortage-value">${shortage}</div>
+          <button data-action="shortage" data-delta="1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">+</button>
+        </div>
+        <div class="drawer-box">
+          <label>서랍</label>
+          <input class="drawer-input" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(drawerValue)}" placeholder="서랍번호">
+        </div>
+      </div>
     </div>
   </article>`;
 }
@@ -823,6 +851,14 @@ function scrollToTrayItem(key) {
   }
 }
 
+function selectPickingCard(key) {
+  state.currentTrayKey = key;
+  els.orderList.querySelectorAll("[data-slot-key]").forEach((card) => {
+    card.classList.toggle("is-selected", card.dataset.slotKey === key);
+  });
+  renderTray();
+}
+
 function bindEvents() {
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     button.addEventListener("click", () => setActiveTab(button.dataset.appTab));
@@ -870,6 +906,12 @@ function bindEvents() {
     render();
   });
   els.orderList.addEventListener("click", (event) => onOrderListClick(event).catch(showError));
+  els.orderList.addEventListener("click", (event) => {
+    if (event.target.closest("[data-action]")) return;
+    const card = event.target.closest("[data-slot-key]");
+    if (!card) return;
+    selectPickingCard(card.dataset.slotKey);
+  });
   els.orderList.addEventListener("change", onDrawerChange);
   els.trayHandle?.addEventListener("click", () => {
     state.trayOpen = !state.trayOpen;
