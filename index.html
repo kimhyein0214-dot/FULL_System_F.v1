@@ -3,50 +3,73 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>FULL_System_F.v1 Rebuild</title>
-    <style>
-      body {
-        margin: 0;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: #f8fafc;
-        color: #111827;
-      }
-      main {
-        max-width: 920px;
-        margin: 0 auto;
-        padding: 56px 24px;
-      }
-      h1 {
-        margin: 0 0 12px;
-        font-size: 28px;
-      }
-      p {
-        margin: 8px 0;
-        line-height: 1.6;
-      }
-      .panel {
-        margin-top: 24px;
-        padding: 20px;
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        background: #ffffff;
-      }
-      code {
-        padding: 2px 5px;
-        border-radius: 4px;
-        background: #e5e7eb;
-      }
-    </style>
+    <title>FULL_System_F.v1 Picking</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="src/styles/picking.css">
   </head>
   <body>
-    <main>
-      <h1>FULL_System_F.v1 rebuild workspace</h1>
-      <p>이 저장소는 운영 프론트를 바로 대체하는 페이지가 아니라, 새 구조를 다시 설계하고 검증하기 위한 작업 공간입니다.</p>
-      <div class="panel">
-        <p>운영 페이지는 계속 <code>kimhyein0214-dot/FULL_System</code> 기준입니다.</p>
-        <p>새 버전은 워크플로우와 데이터 계약을 먼저 정리한 뒤 기능을 하나씩 붙입니다.</p>
-      </div>
-    </main>
+    <div id="app" class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-icon">🏷️</span>
+          <div>
+            <h1>피킹 시스템 F.v1</h1>
+            <p>피킹탭 단독 이식 · 표준 데이터 모델 테스트</p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="refresh-btn" class="btn">↻ 새로고침</button>
+          <input id="date-input" class="date-input" type="date">
+          <button id="today-btn" class="btn">오늘</button>
+          <div class="segmented" aria-label="접수 구분">
+            <button class="seg active" data-session="ALL">전체</button>
+            <button class="seg" data-session="AM">오전</button>
+            <button class="seg" data-session="PM">오후</button>
+          </div>
+          <button id="sort-toggle" class="btn primary">작업순서</button>
+        </div>
+      </header>
+
+      <section class="status-strip">
+        <div class="metric"><span>주문</span><strong id="metric-orders">0</strong></div>
+        <div class="metric good"><span>피킹완료</span><strong id="metric-picked">0</strong></div>
+        <div class="metric danger"><span>부족항목</span><strong id="metric-shortage">0</strong></div>
+        <div class="metric warn"><span>보류</span><strong id="metric-hold">0</strong></div>
+        <div class="metric muted"><span>쓰기</span><strong id="metric-write">OFF</strong></div>
+      </section>
+
+      <section class="progress-panel">
+        <div class="progress-label"><strong id="current-group-label">1조</strong><span id="progress-text">0/0 완료</span></div>
+        <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+      </section>
+
+      <main class="main-grid">
+        <aside class="sidebar">
+          <nav class="tabs">
+            <button class="tab active">🏷️ 피킹</button>
+          </nav>
+          <div class="side-section">
+            <div class="side-title">조 이동</div>
+            <div id="group-list" class="group-list"></div>
+          </div>
+        </aside>
+
+        <section class="work-panel">
+          <div class="panel-head">
+            <div>
+              <h2 id="panel-title">자사코드별 주문서</h2>
+              <p id="panel-subtitle">데이터 로딩 전</p>
+            </div>
+            <input id="search-input" class="search" placeholder="송장번호 / 자사코드 / 주문자 / 수취인">
+          </div>
+          <div id="order-list" class="order-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script type="module" src="src/app/pickingApp.mjs"></script>
   </body>
 </html>
-
