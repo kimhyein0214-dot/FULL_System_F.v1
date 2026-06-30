@@ -276,6 +276,7 @@ input {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  flex: 1;
 }
 
 .side-title {
@@ -290,6 +291,56 @@ input {
   display: grid;
   gap: 4px;
   padding-right: 2px;
+}
+
+.side-jumps {
+  flex-shrink: 0;
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 8px;
+}
+
+.jump-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 36px;
+  gap: 5px;
+  align-items: center;
+}
+
+.jump-row label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.jump-input {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 0 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 1000;
+}
+
+.jump-input:focus {
+  border-color: var(--blue);
+  outline: 2px solid rgba(37, 99, 235, 0.14);
+}
+
+.jump-btn {
+  height: 34px;
+  border: 1px solid #c4d3ff;
+  border-radius: 7px;
+  background: #eff4ff;
+  color: #1f55c5;
+  font-weight: 1000;
+  cursor: pointer;
 }
 
 .group-btn {

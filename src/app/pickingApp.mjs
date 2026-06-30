@@ -38,6 +38,12 @@ const els = {
   searchInput: document.getElementById("search-input"),
   filterBar: document.getElementById("filter-bar"),
   groupList: document.getElementById("group-list"),
+  jumpGroupInput: document.getElementById("jump-group-input"),
+  jumpGroupBtn: document.getElementById("jump-group-btn"),
+  jumpSeqInput: document.getElementById("jump-seq-input"),
+  jumpSeqBtn: document.getElementById("jump-seq-btn"),
+  jumpInvoiceInput: document.getElementById("jump-invoice-input"),
+  jumpInvoiceBtn: document.getElementById("jump-invoice-btn"),
   pickingPanel: document.getElementById("picking-panel"),
   dashboardPanel: document.getElementById("dashboard-panel"),
   dashboardSummary: document.getElementById("dashboard-summary"),
@@ -80,6 +86,10 @@ function compactCode(value) {
     .replace(/\s+/g, "")
     .replace(/[()[\]{}]/g, "")
     .toUpperCase();
+}
+
+function onlyDigits(value) {
+  return String(value || "").replace(/\D/g, "");
 }
 
 function toast(message) {
@@ -868,6 +878,141 @@ function selectPickingCard(key) {
   scrollTrayToSelectedItem(key);
 }
 
+function sortedAllInvoices() {
+  return sortInvoices(state.viewModel?.invoices || []);
+}
+
+function selectFirstItemOfInvoice(invoice, shouldRender = true) {
+  const item = invoice?.items?.[0];
+  if (!invoice || !item) return false;
+  const key = itemSlotKey(invoice, item);
+  state.currentTrayKey = key;
+  if (shouldRender) {
+    render();
+  } else {
+    selectPickingCard(key);
+  }
+  const selectorKey = window.CSS?.escape ? CSS.escape(key) : key.replace(/"/g, '\\"');
+  const target = els.orderList.querySelector(`[data-slot-key="${selectorKey}"]`);
+  if (target) target.scrollIntoView({ block: "center", behavior: "smooth" });
+  scrollTrayToSelectedItem(key);
+  return true;
+}
+
+function resetSearchAndFilterForJump() {
+  state.searchText = "";
+  state.filterMode = "all";
+  if (els.searchInput) els.searchInput.value = "";
+}
+
+function setCurrentGroupByInvoice(invoice) {
+  const groupIndex = state.groups.findIndex((group) => group.some((row) => row.orderGroupNo === invoice?.orderGroupNo));
+  state.currentGroup = groupIndex >= 0 ? groupIndex : 0;
+}
+
+function jumpToGroup(value) {
+  const groupNo = Number(onlyDigits(value));
+  if (!groupNo || groupNo < 1 || groupNo > state.groups.length) {
+    toast("해당 조가 없습니다.");
+    return;
+  }
+  resetSearchAndFilterForJump();
+  state.currentGroup = groupNo - 1;
+  const invoice = state.groups[state.currentGroup]?.[0];
+  selectFirstItemOfInvoice(invoice);
+}
+
+function jumpToSequence(value) {
+  const seq = Number(onlyDigits(value));
+  const invoices = sortedAllInvoices();
+  const invoice = invoices[seq - 1];
+  if (!seq || !invoice) {
+    toast("해당 순서가 없습니다.");
+    return;
+  }
+  resetSearchAndFilterForJump();
+  setCurrentGroupByInvoice(invoice);
+  selectFirstItemOfInvoice(invoice);
+}
+
+function findInvoiceByInvoiceNo(value) {
+  const digits = onlyDigits(value);
+  if (!digits) return null;
+  return sortedAllInvoices().find((invoice) => {
+    const invoiceDigits = onlyDigits(invoice.invoiceNo);
+    return invoiceDigits === digits || invoiceDigits.endsWith(digits) || digits.endsWith(invoiceDigits);
+  });
+}
+
+function jumpToInvoiceNo(value) {
+  const invoice = findInvoiceByInvoiceNo(value);
+  if (!invoice) {
+    toast("송장번호를 찾지 못했습니다.");
+    return false;
+  }
+  const invoices = sortedAllInvoices();
+  const index = invoices.findIndex((row) => row.orderGroupNo === invoice.orderGroupNo);
+  resetSearchAndFilterForJump();
+  if (index >= 0) setCurrentGroupByInvoice(invoice);
+  selectFirstItemOfInvoice(invoice);
+  return true;
+}
+
+function currentVisibleRowKeys() {
+  return currentPickingRows().map(({ invoice, item }) => itemSlotKey(invoice, item));
+}
+
+function moveSelection(delta) {
+  const keys = currentVisibleRowKeys();
+  if (!keys.length) return;
+  const currentIndex = Math.max(0, keys.indexOf(state.currentTrayKey));
+  const nextIndex = state.currentTrayKey ? Math.min(keys.length - 1, Math.max(0, currentIndex + delta)) : 0;
+  scrollToTrayItem(keys[nextIndex]);
+}
+
+async function toggleSelectedItem() {
+  if (!state.currentTrayKey) {
+    const firstKey = currentVisibleRowKeys()[0];
+    if (firstKey) scrollToTrayItem(firstKey);
+    return;
+  }
+  const [orderGroupNo, sellpiaItemNo] = state.currentTrayKey.split("::");
+  const { invoice, item } = findInvoiceAndItem(orderGroupNo, sellpiaItemNo);
+  if (!invoice || !item) return;
+  patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
+  render();
+  try {
+    await savePickingRow(invoice, item, isPicked(item) ? "picked" : "pick_unchecked");
+    toast("피킹 상태 저장");
+  } catch (error) {
+    patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
+    render();
+    toast(`저장 실패: ${error.message}`);
+  }
+}
+
+function isTypingTarget(target) {
+  return Boolean(target?.closest?.("input, textarea, select, button, [contenteditable='true']"));
+}
+
+function onGlobalKeydown(event) {
+  if (event.key.toLowerCase() === "q" && !isTypingTarget(event.target)) {
+    event.preventDefault();
+    els.searchInput?.focus();
+    els.searchInput?.select();
+    return;
+  }
+  if (event.key === "Tab" && !isTypingTarget(event.target)) {
+    event.preventDefault();
+    moveSelection(event.shiftKey ? -1 : 1);
+    return;
+  }
+  if (event.code === "Space" && !isTypingTarget(event.target)) {
+    event.preventDefault();
+    toggleSelectedItem().catch(showError);
+  }
+}
+
 function bindEvents() {
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     button.addEventListener("click", () => setActiveTab(button.dataset.appTab));
@@ -901,6 +1046,10 @@ function bindEvents() {
   els.searchInput.addEventListener("input", () => {
     state.searchText = els.searchInput.value;
     render();
+    const digits = onlyDigits(state.searchText);
+    if (digits.length >= 13 && findInvoiceByInvoiceNo(digits)) {
+      jumpToInvoiceNo(digits);
+    }
   });
   els.filterBar.addEventListener("click", (event) => {
     const button = event.target.closest("[data-filter]");
@@ -913,6 +1062,18 @@ function bindEvents() {
     if (!button) return;
     state.currentGroup = Number(button.dataset.group);
     render();
+  });
+  els.jumpGroupBtn?.addEventListener("click", () => jumpToGroup(els.jumpGroupInput.value));
+  els.jumpSeqBtn?.addEventListener("click", () => jumpToSequence(els.jumpSeqInput.value));
+  els.jumpInvoiceBtn?.addEventListener("click", () => jumpToInvoiceNo(els.jumpInvoiceInput.value));
+  els.jumpGroupInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") jumpToGroup(els.jumpGroupInput.value);
+  });
+  els.jumpSeqInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") jumpToSequence(els.jumpSeqInput.value);
+  });
+  els.jumpInvoiceInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") jumpToInvoiceNo(els.jumpInvoiceInput.value);
   });
   els.orderList.addEventListener("click", (event) => onOrderListClick(event).catch(showError));
   els.orderList.addEventListener("click", (event) => {
@@ -938,6 +1099,7 @@ function bindEvents() {
     state.trayOpen = true;
     scrollToTrayItem(button.dataset.trayKey);
   });
+  document.addEventListener("keydown", onGlobalKeydown);
 }
 
 function showError(error) {
