@@ -55,23 +55,33 @@ input {
 }
 
 .topbar {
-  min-height: 64px;
+  min-height: 58px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 8px 12px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 220px;
+  min-width: 190px;
+  flex-shrink: 0;
 }
 
 .brand-icon {
-  font-size: 22px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 1000;
 }
 
 .brand h1 {
@@ -85,6 +95,7 @@ input {
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .toolbar {
@@ -92,6 +103,9 @@ input {
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .btn,
@@ -137,12 +151,14 @@ input {
 .status-strip {
   display: flex;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   align-items: center;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .metric {
-  min-width: 104px;
+  min-width: 96px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -180,7 +196,7 @@ input {
 
 .progress-panel {
   display: grid;
-  grid-template-columns: 96px 1fr;
+  grid-template-columns: minmax(126px, auto) 1fr;
   align-items: center;
   gap: 10px;
   padding: 7px 12px;
@@ -220,7 +236,7 @@ input {
 .main-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: 292px 1fr;
+  grid-template-columns: 286px 1fr;
   gap: 8px;
 }
 
@@ -313,7 +329,7 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 9px 14px;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -367,7 +383,7 @@ input {
 
 .search {
   height: 38px;
-  width: min(420px, 40vw);
+  width: min(360px, 32vw);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0 12px;
@@ -413,11 +429,12 @@ input {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .work-no {
   color: #193d92;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 1000;
   letter-spacing: 0;
   white-space: nowrap;
@@ -427,6 +444,8 @@ input {
   font-size: 15px;
   font-weight: 900;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .invoice-badge,
@@ -447,6 +466,12 @@ input {
   color: #21794c;
 }
 
+.total-badge {
+  border-color: #b7e0c5;
+  background: #e8f8ef;
+  color: #166534;
+}
+
 .order-actions {
   display: flex;
   align-items: center;
@@ -455,7 +480,7 @@ input {
 }
 
 .drawer-input {
-  width: 116px;
+  width: 112px;
   height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -465,10 +490,10 @@ input {
 
 .item-row {
   display: grid;
-  grid-template-columns: 46px 92px minmax(240px, 1fr) 72px 148px;
-  gap: 10px;
+  grid-template-columns: 44px 92px minmax(250px, 1fr) 68px 144px;
+  gap: 9px;
   align-items: center;
-  min-height: 92px;
+  min-height: 96px;
   padding: 8px 10px;
   border-top: 1px solid rgba(203, 213, 225, 0.55);
 }
@@ -503,12 +528,22 @@ input {
   min-width: 0;
 }
 
+.own-code-line {
+  margin: 0 0 4px;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 1000;
+  line-height: 1.15;
+}
+
 .option {
   margin: 0 0 5px;
   font-size: 15px;
   font-weight: 1000;
   line-height: 1.25;
   color: #111827;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .product {
@@ -523,7 +558,7 @@ input {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 5px;
+  margin-top: 4px;
   flex-wrap: wrap;
 }
 
@@ -535,15 +570,15 @@ input {
 
 .qty {
   color: #193d92;
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 1000;
   text-align: center;
 }
 
 .shortage-control {
-  height: 52px;
+  height: 50px;
   display: grid;
-  grid-template-columns: 42px 1fr 42px;
+  grid-template-columns: 40px 1fr 40px;
   align-items: center;
   gap: 4px;
   border: 2px solid #f2b2a6;
@@ -553,7 +588,7 @@ input {
 }
 
 .shortage-control button {
-  height: 38px;
+  height: 36px;
   border: 2px solid #dc8b5f;
   border-radius: 8px;
   background: #fffaf8;
@@ -604,18 +639,18 @@ input {
 
 @media (max-width: 980px) {
   .topbar {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
   }
 
   .toolbar {
-    width: 100%;
+    width: auto;
     overflow-x: auto;
     padding-bottom: 2px;
   }
 
   .main-grid {
-    grid-template-columns: 240px 1fr;
+    grid-template-columns: 236px 1fr;
   }
 
   .panel-head {
@@ -634,6 +669,6 @@ input {
   }
 
   .item-row {
-    grid-template-columns: 42px 82px minmax(220px, 1fr) 60px 132px;
+    grid-template-columns: 42px 82px minmax(220px, 1fr) 56px 128px;
   }
 }

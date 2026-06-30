@@ -13,14 +13,14 @@
     <div id="app" class="app-shell">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-icon">🏷️</span>
+          <span class="brand-icon" aria-hidden="true">PK</span>
           <div>
             <h1>피킹 시스템 F.v1</h1>
-            <p>피킹탭 단독 이식 · 표준 데이터 모델 테스트</p>
+            <p>피킹탭 단독 이식 테스트</p>
           </div>
         </div>
         <div class="toolbar">
-          <button id="refresh-btn" class="btn">↻ 새로고침</button>
+          <button id="refresh-btn" class="btn">새로고침</button>
           <input id="date-input" class="date-input" type="date">
           <button id="today-btn" class="btn">오늘</button>
           <div class="segmented" aria-label="접수 구분">
@@ -49,7 +49,7 @@
       <main class="main-grid">
         <aside class="sidebar">
           <nav class="tabs">
-            <button class="tab active">🏷️ 피킹</button>
+            <button class="tab active">피킹</button>
           </nav>
           <div class="side-section">
             <div class="side-title">조 이동</div>
@@ -61,7 +61,7 @@
           <div class="panel-head">
             <div>
               <h2 id="panel-title">자사코드별 주문서</h2>
-              <p id="panel-subtitle">데이터 로딩 전</p>
+              <p id="panel-subtitle">데이터 로딩 중</p>
             </div>
             <div class="panel-tools">
               <div id="filter-bar" class="filter-bar" aria-label="피킹 필터">

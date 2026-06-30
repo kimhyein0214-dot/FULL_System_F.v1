@@ -99,6 +99,14 @@ function itemStateKey(invoice, item) {
   return `${invoice.orderGroupNo}::${item.sellpiaItemNo}`;
 }
 
+function cleanOptionName(optionName, ownCode) {
+  let option = String(optionName || "").trim();
+  const code = String(ownCode || "").trim();
+  if (!code) return option;
+  option = option.replace(new RegExp(`\\[\\s*${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\]`, "g"), "");
+  return option.replace(/\s{2,}/g, " ").trim();
+}
+
 function invoiceStats(invoice) {
   const items = invoice.items || [];
   const picked = items.filter(isPicked).length;
@@ -260,7 +268,10 @@ function renderOrderList() {
 function renderInvoice(invoice) {
   const stats = invoiceStats(invoice);
   const classes = ["order-card", stats.shortage ? "has-shortage" : "", stats.hold ? "has-hold" : ""].filter(Boolean).join(" ");
-  const totalBadge = invoice.orderTotalAmount !== null ? `<span class="small-badge seller-badge">총금액 ${invoice.orderTotalAmount.toLocaleString("ko-KR")}</span>` : "";
+  const totalBadge =
+    invoice.orderTotalAmount !== null
+      ? `<span class="small-badge total-badge">총금액 ${invoice.orderTotalAmount.toLocaleString("ko-KR")}</span>`
+      : "";
 
   return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}">
     <div class="order-head">
@@ -286,17 +297,17 @@ function renderItem(invoice, item) {
   const shortage = shortageQty(item);
   const checked = isPicked(item);
   const imageUrl = productImageUrl(item.sellpiaProductCode);
-  const option = item.optionName || item.ownCode || item.productName || "-";
+  const option = cleanOptionName(item.optionName, item.ownCode) || item.ownCode || item.productName || "-";
   const product = item.productName || "";
 
   return `<div class="item-row" data-key="${escapeHtml(key)}">
     <button class="pick-check ${checked ? "checked" : ""}" data-action="toggle" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">${checked ? "✓" : ""}</button>
     ${imageUrl ? `<img class="thumb" src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<div class="thumb"></div>'}
     <div class="item-main">
+      <p class="own-code-line">${escapeHtml(item.ownCode || "-")}</p>
       <p class="option">${escapeHtml(option)}</p>
       <p class="product">${escapeHtml(product)}</p>
       <div class="code-line">
-        <span class="own-code">${escapeHtml(item.ownCode || "-")}</span>
         ${item.sellpiaProductCode ? `<span class="small-badge">${escapeHtml(item.sellpiaProductCode)}</span>` : ""}
         ${item.sellpiaLocation ? `<span class="small-badge">${escapeHtml(item.sellpiaLocation)}</span>` : ""}
       </div>
