@@ -1003,6 +1003,26 @@ input {
   word-break: break-word;
 }
 
+.workflow-row-code.seq-with-slot {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  line-height: 1.05;
+}
+
+.workflow-row-code.seq-with-slot strong {
+  color: #1f3f94;
+  font-size: 18px;
+  font-weight: 1000;
+}
+
+.workflow-row-code.seq-with-slot small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
 .workflow-row-main {
   min-width: 0;
   display: grid;
