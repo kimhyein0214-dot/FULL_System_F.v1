@@ -1151,6 +1151,16 @@ input {
   font-weight: 900;
 }
 
+.inspection-title-block {
+  min-width: 0;
+}
+
+.inspection-title-block strong {
+  color: #111827;
+  font-size: 28px;
+  line-height: 1;
+}
+
 .inspection-actions {
   display: flex;
   align-items: center;
@@ -1178,7 +1188,7 @@ input {
 .workflow-item-table {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: auto;
   background: #ffffff;
 }
 
@@ -1190,6 +1200,25 @@ input {
   gap: 8px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--line-soft);
+}
+
+.inspection-item-table .workflow-item-row {
+  min-width: 1330px;
+  min-height: 154px;
+  grid-template-columns: 52px 168px 420px 50px 300px 84px 148px 92px 74px 86px;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.inspection-item-table .workflow-item-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: 42px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 1000;
 }
 
 .workflow-item-row:last-child {
@@ -1206,6 +1235,10 @@ input {
   text-align: center;
 }
 
+.inspection-item-table .workflow-item-header span {
+  color: #ffffff;
+}
+
 .workflow-item-photo {
   width: 64px;
   aspect-ratio: 1 / 1;
@@ -1218,6 +1251,12 @@ input {
   overflow: hidden;
   font-size: 11px;
   font-weight: 1000;
+}
+
+.inspection-item-table .workflow-item-photo {
+  width: 168px;
+  height: 136px;
+  aspect-ratio: auto;
 }
 
 .workflow-item-photo img {
@@ -1233,11 +1272,45 @@ input {
 
 .workflow-item-row em {
   min-width: 0;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.workflow-option-cell,
+.workflow-product-cell,
+.workflow-code-cell {
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+.workflow-option-cell {
+  color: #1a2840;
+  font-size: 15px;
+  font-weight: 1000;
+}
+
+.workflow-product-cell {
+  color: #334155;
+  font-size: 13px;
+}
+
+.workflow-amount-cell {
+  color: #166534 !important;
+  text-align: left !important;
+}
+
+.workflow-sellpia-cell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-style: normal;
-  font-weight: 900;
+  color: #64748b !important;
+  font-size: 11px;
+}
+
+.workflow-shortage-cell {
+  color: var(--red) !important;
 }
 
 .workflow-item-row b {

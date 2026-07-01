@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-keys-gold1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-layout1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -434,6 +434,33 @@ function invoiceSequenceNo(invoice, fallbackIndex = 0) {
 
 function invoiceSequenceLabel(invoice, fallbackIndex = 0) {
   return `${invoiceSequenceNo(invoice, fallbackIndex)}번`;
+}
+
+function itemSequenceNo(item, fallbackIndex = 0) {
+  const explicit = Number(item?.itemOrderIndex || 0);
+  if (explicit) return explicit;
+  const suffix = String(item?.sellpiaItemNo || "").match(/(?:_\[(\d{1,3})\]|\((\d{1,3})\)|_(\d{1,3}))$/);
+  return suffix ? Number(suffix[1] || suffix[2] || suffix[3]) : fallbackIndex + 1;
+}
+
+function formatAmount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toLocaleString("ko-KR") : "-";
+}
+
+function renderInspectionItemHeader() {
+  return `<div class="workflow-item-row workflow-item-header">
+    <span>상품순서번호</span>
+    <span>사진</span>
+    <span>옵션명</span>
+    <span>수량</span>
+    <span>상품명</span>
+    <span>금액</span>
+    <span>자사코드</span>
+    <span>셀피아코드</span>
+    <span>부족수량</span>
+    <span>상태</span>
+  </div>`;
 }
 
 function formatShortDate(value) {
@@ -964,12 +991,15 @@ function renderInspectionPanels() {
     const itemState = workflowItemState(selected, item);
     return itemState?.shortageRepicked && !itemState?.inspected && !itemState?.cancelled;
   }).length;
+  const selectedIndex = invoices.findIndex((invoice) => invoice.orderGroupNo === selected.orderGroupNo);
+  const selectedSequence = invoiceSequenceLabel(selected, selectedIndex >= 0 ? selectedIndex : 0);
   els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""}">
-      <div>
-        <strong>${escapeHtml(selected.invoiceNo || "송장없음")}</strong>
+      <div class="inspection-title-block">
+        <strong>${escapeHtml(selectedSequence)}</strong>
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
       </div>
       <div class="inspection-actions">
+        <span class="invoice-badge">${escapeHtml(selected.invoiceNo || "송장없음")}</span>
         ${invoiceHasGold(selected) ? '<span class="workflow-row-badge gold">골드</span>' : ""}
         ${selectedRepicked ? `<span class="workflow-row-badge warn">미송 ${selectedRepicked}</span>` : ""}
         ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
@@ -978,19 +1008,28 @@ function renderInspectionPanels() {
         ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
       </div>
     </div>
-    <div class="workflow-item-table">
+    <div class="workflow-item-table inspection-item-table">
+      ${renderInspectionItemHeader()}
       ${(selected.items || [])
         .map((item, index) => {
           const itemState = workflowItemState(selected, item);
           const rowClass = itemState?.shortageRepicked && !itemState?.inspected ? "repicked" : "";
           const imageUrl = productImageUrl(item.sellpiaProductCode);
+          const option = cleanOptionName(item.optionName, item.ownCode) || "-";
+          const product = item.productName || "-";
+          const shortage = Number(itemState?.shortageQty || shortageQty(item) || 0);
+          const statusText = rowClass ? "미송피킹 완료" : "전체상품";
           return `<div class="workflow-item-row ${rowClass}">
-            <span>${index + 1}</span>
+            <span class="workflow-seq-cell">${itemSequenceNo(item, index)}</span>
             <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
-            <strong>${escapeHtml(item.ownCode || "-")}</strong>
-            <em>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</em>
-            <b>${Number(item.quantity) || 1}개</b>
-            ${rowClass ? '<small>미송피킹 완료</small>' : "<small>전체상품</small>"}
+            <em class="workflow-option-cell">${escapeHtml(option)}</em>
+            <b>${Number(item.quantity) || 1}</b>
+            <strong class="workflow-product-cell">${escapeHtml(product)}</strong>
+            <span class="workflow-amount-cell">${escapeHtml(formatAmount(item.itemSalesAmount))}</span>
+            <strong class="workflow-code-cell">${escapeHtml(item.ownCode || "-")}</strong>
+            <span class="workflow-sellpia-cell">${escapeHtml(item.sellpiaProductCode || "-")}</span>
+            <span class="workflow-shortage-cell">${shortage}</span>
+            <small>${statusText}</small>
           </div>`;
         })
         .join("")}
