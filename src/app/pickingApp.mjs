@@ -1,5 +1,5 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-session-reorder1";
-import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260701-session-reorder1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-sort-order-display1";
+import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260701-sort-order-display1";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
 const SUPABASE_KEY = "sb_publishable_XVnKGJo66GZiYTq5Ivu8dA_SjBVvX0g";
@@ -9,6 +9,7 @@ const JO_SIZE = 4;
 
 const params = new URLSearchParams(location.search);
 const allowWrites = params.get("write") === "1";
+const allowOrderReorder = params.get("reorder") !== "0";
 const allowWorkflowEvents = params.get("events") !== "0";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -471,6 +472,19 @@ function invoiceSequenceLabel(invoice, fallbackIndex = 0) {
   return `${invoiceSequenceNo(invoice, fallbackIndex)}번`;
 }
 
+function visibleInvoiceSequenceNo(invoice, fallbackIndex = 0) {
+  const groupNo = String(invoice?.orderGroupNo || "");
+  if (state.workSortMode && groupNo) {
+    const index = workOrderedInvoices().findIndex((row) => String(row.orderGroupNo || "") === groupNo);
+    if (index >= 0) return index + 1;
+  }
+  return invoiceSequenceNo(invoice, fallbackIndex);
+}
+
+function visibleInvoiceSequenceLabel(invoice, fallbackIndex = 0) {
+  return `${visibleInvoiceSequenceNo(invoice, fallbackIndex)}번`;
+}
+
 function itemSequenceNo(item, fallbackIndex = 0) {
   const explicit = Number(item?.itemOrderIndex || 0);
   if (explicit) return explicit;
@@ -813,7 +827,7 @@ function renderTray() {
       const shortage = slotRows.filter(({ item }) => shortageQty(item) > 0).length;
       const firstInvoice = slotRows[0]?.invoice;
       const title = firstInvoice
-        ? `${index + 1}번 · 송장 ${invoiceSequenceLabel(firstInvoice)} · ${firstInvoice.displayName || firstInvoice.csDisplayName || firstInvoice.invoiceNo || ""}`
+        ? `${index + 1}번 · 송장 ${visibleInvoiceSequenceLabel(firstInvoice)} · ${firstInvoice.displayName || firstInvoice.csDisplayName || ""}`
         : `${index + 1}번`;
       const body = slotRows.length
         ? slotRows
@@ -832,7 +846,7 @@ function renderTray() {
               return `<button class="${classes}" data-tray-key="${escapeHtml(key)}" type="button">
                 <span class="tray-item-check">${isPicked(item) ? "✓" : ""}</span>
                 <span class="tray-item-main">
-                  <span class="tray-item-seq">송장 ${escapeHtml(invoiceSequenceLabel(invoice))} · 상품 ${itemNo}번</span>
+                  <span class="tray-item-seq">송장 ${escapeHtml(visibleInvoiceSequenceLabel(invoice))} · 상품 ${itemNo}번</span>
                   <strong>${escapeHtml(item.ownCode || "-")}</strong>
                   <small>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</small>
                 </span>
@@ -1002,7 +1016,7 @@ function renderShortageRow({ invoice, item, state: itemState, completed }) {
     <span class="workflow-row-main">
       <strong>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</strong>
       <span class="workflow-row-order">상품순서 ${orderNo}번</span>
-      <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · ${escapeHtml(invoice.invoiceNo || "송장없음")}</small>
+      <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · 송장 ${escapeHtml(visibleInvoiceSequenceLabel(invoice))}</small>
     </span>
     <span class="workflow-row-badge ${completed ? "done" : "danger"}">${completed ? "피킹완료" : `미송 ${Number(itemState?.shortageQty || 0) || 1}`}</span>
   </button>`;
@@ -1094,7 +1108,7 @@ function renderShortagePanels() {
         <p>${escapeHtml(selected.item.productName || "")}</p>
         <dl>
           <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, invoiceItemIndex(selected.invoice, selected.item))}번</dd></div>
-          <div><dt>송장번호</dt><dd>${escapeHtml(selected.invoice.invoiceNo || "-")}</dd></div>
+          <div><dt>송장순서</dt><dd>${escapeHtml(visibleInvoiceSequenceLabel(selected.invoice))}</dd></div>
           <div><dt>부족수량</dt><dd>${selectedCompleted ? previousShortageQuantity(selected.invoice, selected.item) : Number(selectedState?.shortageQty || 0) || 1}개</dd></div>
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>
           <div><dt>마지막 이벤트</dt><dd>${escapeHtml(formatShortDate(selectedState?.lastEventAt))}</dd></div>
@@ -1185,10 +1199,10 @@ function renderInspectionPanels() {
         .filter(Boolean)
         .join("");
       return `<button class="${rowClasses}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
-        <span class="workflow-row-code">${escapeHtml(invoiceSequenceLabel(invoice, index))}</span>
+        <span class="workflow-row-code">${escapeHtml(visibleInvoiceSequenceLabel(invoice, index))}</span>
         <span class="workflow-row-main">
           <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
-          <small>상품 ${invoice.items.length}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")} · ${escapeHtml(invoice.invoiceNo || "송장없음")}</small>
+          <small>상품 ${invoice.items.length}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")} · 송장 ${escapeHtml(visibleInvoiceSequenceLabel(invoice, index))}</small>
         </span>
         <span class="workflow-row-badges">${badges}</span>
       </button>`;
@@ -1207,7 +1221,7 @@ function renderInspectionPanels() {
     return itemState?.shortageRepicked && !itemState?.inspected && !itemState?.cancelled;
   }).length;
   const selectedIndex = invoices.findIndex((invoice) => invoice.orderGroupNo === selected.orderGroupNo);
-  const selectedSequence = invoiceSequenceLabel(selected, selectedIndex >= 0 ? selectedIndex : 0);
+  const selectedSequence = visibleInvoiceSequenceLabel(selected, selectedIndex >= 0 ? selectedIndex : 0);
   const completeAction = selectedCompleted ? "inspection-reopen" : "inspection-complete";
   const completeLabel = selectedCompleted ? "완료 취소" : "완료 처리";
   els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""} ${selectedCompleted ? "is-completed" : ""}">
@@ -1216,7 +1230,7 @@ function renderInspectionPanels() {
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
       </div>
       <div class="inspection-actions">
-        <span class="invoice-badge">${escapeHtml(selected.invoiceNo || "송장없음")}</span>
+        <span class="invoice-badge">${escapeHtml(selectedSequence)}</span>
         ${selectedCompleted ? '<span class="workflow-row-badge done">완료</span>' : ""}
         ${invoiceHasGold(selected) ? '<span class="workflow-row-badge gold">골드</span>' : ""}
         ${selectedRepicked ? `<span class="workflow-row-badge warn">미송 ${selectedRepicked}</span>` : ""}
@@ -1303,7 +1317,7 @@ function renderCompletedPanels() {
       const completedEvent = completedEventForInvoice(invoice);
       const completedAt = completedEvent?.event_at || completedEvent?.created_at || invoiceState?.lastEventAt;
       return `<button class="workflow-row ${invoice.orderGroupNo === state.selectedCompletedGroup ? "selected" : ""}" data-completed-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
-        <span class="workflow-row-code">${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
+        <span class="workflow-row-code">${escapeHtml(visibleInvoiceSequenceLabel(invoice))}</span>
         <span class="workflow-row-main">
           <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
           <small>접수 ${escapeHtml(invoice.receiptDate || "-")} · 완료 ${escapeHtml(formatShortDate(completedAt))} · 상품 ${invoice.items.length}종</small>
@@ -1321,7 +1335,7 @@ function renderCompletedPanels() {
   const actionDisabled = allowWorkflowEvents ? "" : "disabled";
   els.completedDetail.innerHTML = `<div class="inspection-header-skeleton is-completed">
       <div>
-        <strong>${escapeHtml(selected.invoiceNo || "송장없음")}</strong>
+        <strong>${escapeHtml(visibleInvoiceSequenceLabel(selected))}</strong>
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")} · 완료 ${escapeHtml(formatShortDate(completedAt))}</span>
       </div>
       <div class="inspection-actions">
@@ -1387,7 +1401,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
         <p class="product">${escapeHtml(product)}</p>
         <div class="invoice-meta">
           <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
-          <span>${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
+          <span>송장 ${escapeHtml(visibleInvoiceSequenceLabel(invoice))}</span>
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
       </div>
@@ -1734,8 +1748,8 @@ function exportToggleCsv() {
 }
 
 async function reorderInvoiceSortOrder() {
-  if (!allowWrites) {
-    toast("송장순서 재정렬은 ?write=1에서 가능합니다.");
+  if (!allowOrderReorder) {
+    toast("송장순서 재정렬이 비활성화되어 있습니다.");
     return;
   }
   const ordered = workOrderedInvoices();
@@ -1750,12 +1764,23 @@ async function reorderInvoiceSortOrder() {
   );
   if (!proceed) return;
 
-  for (let index = 0; index < ordered.length; index += 1) {
-    const invoice = ordered[index];
-    const nextSortOrder = index + 1;
-    const { error } = await db.from("orders").update({ sort_order: nextSortOrder }).eq("ord_no", invoice.orderGroupNo);
-    if (error) throw error;
-    invoice.sortOrder = nextSortOrder;
+  const groups =
+    state.session === "ALL"
+      ? [
+          ordered.filter((invoice) => invoiceSessionRank(invoice) === 0),
+          ordered.filter((invoice) => invoiceSessionRank(invoice) === 1),
+          ordered.filter((invoice) => invoiceSessionRank(invoice) > 1),
+        ].filter((rows) => rows.length)
+      : [ordered];
+
+  for (const group of groups) {
+    for (let index = 0; index < group.length; index += 1) {
+      const invoice = group[index];
+      const nextSortOrder = index + 1;
+      const { error } = await db.from("orders").update({ sort_order: nextSortOrder }).eq("ord_no", invoice.orderGroupNo);
+      if (error) throw error;
+      invoice.sortOrder = nextSortOrder;
+    }
   }
 
   state.workSortMode = false;

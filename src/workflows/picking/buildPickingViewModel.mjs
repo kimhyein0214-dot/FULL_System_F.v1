@@ -3,7 +3,7 @@ import {
   normalizeCurrentDbItem,
   normalizeCurrentDbOrder,
   normalizePickingState,
-} from "../../adapters/currentDbPickingAdapter.mjs?v=20260701-session-reorder1";
+} from "../../adapters/currentDbPickingAdapter.mjs?v=20260701-sort-order-display1";
 
 function compareNullableNumbers(a, b) {
   if (a === null && b === null) return 0;
