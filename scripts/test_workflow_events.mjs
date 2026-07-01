@@ -3,6 +3,7 @@ import {
   ITEM_EVENT,
   INVOICE_EVENT,
   buildWorkflowState,
+  completedInvoicesForInspection,
   openShortageItems,
   repickedInvoicesForInspection,
 } from "../src/workflows/workflowEvents.mjs";
@@ -116,5 +117,33 @@ const invoiceInspectedState = buildWorkflowState({
 });
 
 assert.equal(repickedInvoicesForInspection(viewModel, invoiceInspectedState).length, 0);
+assert.deepEqual(
+  completedInvoicesForInspection(viewModel, invoiceInspectedState).map((row) => row.orderGroupNo),
+  ["G1"],
+);
+
+const invoiceReopenedState = buildWorkflowState({
+  itemEvents: crossDayEvents,
+  invoiceEvents: [
+    {
+      id: 4,
+      order_group_no: "G1",
+      event_type: INVOICE_EVENT.INSPECTION_COMPLETED,
+      event_at: "2026-07-02T02:00:00Z",
+    },
+    {
+      id: 5,
+      order_group_no: "G1",
+      event_type: INVOICE_EVENT.INSPECTION_REOPENED,
+      event_at: "2026-07-02T03:00:00Z",
+    },
+  ],
+});
+
+assert.deepEqual(
+  repickedInvoicesForInspection(viewModel, invoiceReopenedState).map((row) => row.orderGroupNo),
+  ["G1"],
+);
+assert.equal(completedInvoicesForInspection(viewModel, invoiceReopenedState).length, 0);
 
 console.log("workflow event tests passed");

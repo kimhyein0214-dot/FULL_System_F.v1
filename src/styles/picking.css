@@ -898,9 +898,36 @@ input {
   color: var(--amber);
 }
 
+.workflow-row-badge.done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
 .workflow-row-badge.hold {
   background: #f5f3ff;
   color: #6d28d9;
+}
+
+.workflow-list-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.workflow-list-toggle button {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #475569;
+  padding: 7px 8px;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.workflow-list-toggle button.active {
+  border-color: #8fb4ff;
+  background: #eef4ff;
+  color: #1d4ed8;
 }
 
 .workflow-detail-card {
@@ -1075,6 +1102,10 @@ input {
 .inspection-header-skeleton.is-hold {
   border-left: 4px solid #8b5cf6;
   background: #f5f3ff;
+}
+
+.inspection-header-skeleton.is-completed [data-action="inspection-complete"] {
+  display: none;
 }
 
 .inspection-detail-body {

@@ -234,6 +234,13 @@ export function repickedInvoicesForInspection(viewModel, workflowState) {
   });
 }
 
+export function completedInvoicesForInspection(viewModel, workflowState) {
+  return (viewModel?.invoices || []).filter((invoice) => {
+    const invoiceState = workflowState.invoiceStateByKey.get(invoice.orderGroupNo);
+    return Boolean(invoiceState?.inspected && !invoiceState?.cancelled);
+  });
+}
+
 export function invoicesForCs(viewModel, workflowState) {
   return (viewModel?.invoices || []).filter((invoice) => {
     const invoiceState = workflowState.invoiceStateByKey.get(invoice.orderGroupNo);

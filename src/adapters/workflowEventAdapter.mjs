@@ -3,6 +3,7 @@ import {
   INVOICE_EVENT,
   ITEM_EVENT,
   buildWorkflowState,
+  completedInvoicesForInspection,
   openShortageItems,
   repickedInvoicesForInspection,
 } from "../workflows/workflowEvents.mjs";
@@ -205,6 +206,7 @@ export function buildWorkflowQueues({ orders = [], orderItems = [], itemEvents =
     syntheticEvents,
     shortageItems: openShortageItems(viewModel, workflowState),
     inspectionInvoices: repickedInvoicesForInspection(viewModel, workflowState),
+    inspectionCompletedInvoices: completedInvoicesForInspection(viewModel, workflowState),
   };
 }
 

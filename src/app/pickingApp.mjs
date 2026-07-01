@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-events-default1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-completed1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -30,6 +30,7 @@ const state = {
   workflowQueueError: "",
   selectedShortageKey: "",
   selectedInspectionGroup: "",
+  inspectionView: "pending",
   workflowEventsReady: false,
   workflowEventsChecked: false,
   saving: new Set(),
@@ -701,6 +702,8 @@ function renderShortagePanels() {
   const rows = state.workflowQueues?.shortageItems || [];
   if (els.shortageListCount) els.shortageListCount.textContent = `${rows.length}개`;
 
+  if (els.inspectionListCount) els.inspectionListCount.textContent = `${isCompletedView ? "완료 " : "대기 "}${invoices.length}건`;
+
   if (state.workflowQueueError) {
     renderWorkflowEmpty(els.shortageListBody, state.workflowQueueError);
     renderWorkflowEmpty(els.shortageDetail, "이벤트 큐를 불러오지 못했습니다.");
@@ -783,7 +786,11 @@ function renderShortagePanels() {
 }
 
 function renderInspectionPanels() {
-  const invoices = state.workflowQueues?.inspectionInvoices || [];
+  const pendingInvoices = state.workflowQueues?.inspectionInvoices || [];
+  const completedInvoices = state.workflowQueues?.inspectionCompletedInvoices || [];
+  const isCompletedView = state.inspectionView === "completed";
+  const invoices = isCompletedView ? completedInvoices : pendingInvoices;
+  if (els.inspectionListCount) els.inspectionListCount.textContent = `${isCompletedView ? "완료 " : "대기 "}${invoices.length}건`;
   if (els.inspectionListCount) els.inspectionListCount.textContent = `${invoices.length}건`;
 
   if (state.workflowQueueError) {
@@ -808,7 +815,10 @@ function renderInspectionPanels() {
     state.selectedInspectionGroup = invoices[0].orderGroupNo;
   }
 
-  els.inspectionListBody.innerHTML = invoices
+  els.inspectionListBody.innerHTML = `<div class="workflow-list-toggle">
+      <button class="${!isCompletedView ? "active" : ""}" data-inspection-view="pending" type="button">대기 ${pendingInvoices.length}</button>
+      <button class="${isCompletedView ? "active" : ""}" data-inspection-view="completed" type="button">완료 ${completedInvoices.length}</button>
+    </div>` + invoices
     .map((invoice) => {
       const itemStates = (invoice.items || []).map((item) => workflowItemState(invoice, item)).filter(Boolean);
       const repicked = itemStates.filter((row) => row.shortageRepicked && !row.inspected && !row.cancelled).length;
@@ -828,8 +838,10 @@ function renderInspectionPanels() {
   const invoiceState = workflowInvoiceState(selected);
   const actionDisabled = allowWorkflowEvents ? "" : "disabled";
   const holdAction = invoiceState?.hold ? "inspection-hold-release" : "inspection-hold";
+  const completeAction = isCompletedView ? "inspection-reopen" : "inspection-complete";
+  const completeLabel = isCompletedView ? "완료 취소" : "완료 처리";
   const holdLabel = invoiceState?.hold ? "보류 해제" : "보류 처리";
-  els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""}">
+  els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""} ${isCompletedView ? "is-completed" : ""}">
       <div>
         <strong>${escapeHtml(selected.invoiceNo || "송장없음")}</strong>
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
@@ -837,6 +849,7 @@ function renderInspectionPanels() {
       <div class="inspection-actions">
         ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
         <button class="btn" data-action="${holdAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${holdLabel}</button>
+        ${isCompletedView ? `<button class="btn primary" data-action="inspection-reopen" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>완료 취소</button>` : ""}
         <button class="btn primary" data-action="inspection-complete" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>완료 처리</button>
         ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         <button class="btn" type="button" disabled>보류 처리</button>
@@ -1125,7 +1138,11 @@ async function saveSelectedShortageMemo(shortageKey = state.selectedShortageKey)
 }
 
 function selectedInspectionInvoice(orderGroupNo = state.selectedInspectionGroup) {
-  return (state.workflowQueues?.inspectionInvoices || []).find((invoice) => invoice.orderGroupNo === orderGroupNo) || null;
+  return (
+    [...(state.workflowQueues?.inspectionInvoices || []), ...(state.workflowQueues?.inspectionCompletedInvoices || [])].find(
+      (invoice) => invoice.orderGroupNo === orderGroupNo,
+    ) || null
+  );
 }
 
 async function completeSelectedInspection(orderGroupNo = state.selectedInspectionGroup) {
@@ -1136,9 +1153,24 @@ async function completeSelectedInspection(orderGroupNo = state.selectedInspectio
   }
   const ok = await saveWorkflowInvoiceEvent(invoice, "inspection_completed", { memo: "inspection completed" });
   if (!ok) return;
-  state.selectedInspectionGroup = "";
+  state.inspectionView = "completed";
+  state.selectedInspectionGroup = invoice.orderGroupNo;
   await loadWorkflowData();
   toast("검품 완료 처리되었습니다.");
+}
+
+async function reopenSelectedInspection(orderGroupNo = state.selectedInspectionGroup) {
+  const invoice = selectedInspectionInvoice(orderGroupNo);
+  if (!invoice) {
+    toast("검품 완료 송장을 찾지 못했습니다.");
+    return;
+  }
+  const ok = await saveWorkflowInvoiceEvent(invoice, "inspection_reopened", { memo: "inspection reopened" });
+  if (!ok) return;
+  state.inspectionView = "pending";
+  state.selectedInspectionGroup = invoice.orderGroupNo;
+  await loadWorkflowData();
+  toast("검품 완료가 취소되었습니다.");
 }
 
 async function toggleSelectedInspectionHold(orderGroupNo = state.selectedInspectionGroup) {
@@ -1527,6 +1559,13 @@ function bindEvents() {
     }
   });
   els.inspectionListBody?.addEventListener("click", (event) => {
+    const viewButton = event.target.closest("[data-inspection-view]");
+    if (viewButton) {
+      state.inspectionView = viewButton.dataset.inspectionView === "completed" ? "completed" : "pending";
+      state.selectedInspectionGroup = "";
+      renderInspectionPanels();
+      return;
+    }
     const button = event.target.closest("[data-inspection-group]");
     if (!button) return;
     state.selectedInspectionGroup = button.dataset.inspectionGroup;
@@ -1537,6 +1576,9 @@ function bindEvents() {
     if (!button) return;
     if (button.dataset.action === "inspection-complete") {
       completeSelectedInspection(button.dataset.inspectionGroup).catch(showError);
+    }
+    if (button.dataset.action === "inspection-reopen") {
+      reopenSelectedInspection(button.dataset.inspectionGroup).catch(showError);
     }
     if (button.dataset.action === "inspection-hold" || button.dataset.action === "inspection-hold-release") {
       toggleSelectedInspectionHold(button.dataset.inspectionGroup).catch(showError);
