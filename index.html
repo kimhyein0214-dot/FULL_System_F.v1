@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pretendard/1.3.9/static/pretendard.css">
-    <link rel="stylesheet" href="src/styles/picking.css?v=20260701-inspection-completed1">
+    <link rel="stylesheet" href="src/styles/picking.css?v=20260701-completed-tab1">
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -53,6 +53,7 @@
             <button class="tab active" data-app-tab="picking">피킹</button>
             <button class="tab" data-app-tab="shortage">미송피킹</button>
             <button class="tab" data-app-tab="inspection">검품</button>
+            <button class="tab" data-app-tab="completed">작업완료</button>
           </nav>
           <div class="side-section">
             <div class="side-title">조 이동</div>
@@ -197,6 +198,47 @@
             </section>
           </div>
         </section>
+
+        <section id="completed-panel" class="workflow-panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h2>작업완료</h2>
+              <p>검품완료된 송장을 날짜별로 확인하고 필요하면 완료취소합니다.</p>
+            </div>
+            <div class="panel-tools">
+              <button class="filter-chip active" data-completed-date-mode="receipt" type="button">접수일 기준</button>
+              <button class="filter-chip" data-completed-date-mode="completed" type="button">완료일 기준</button>
+            </div>
+          </div>
+          <div class="workflow-layout completed-layout">
+            <aside class="workflow-list">
+              <div class="workflow-list-head">
+                <strong>완료 송장</strong>
+                <span id="completed-list-count">0건</span>
+              </div>
+              <div id="completed-list-body" class="workflow-list-body">
+                <div class="workflow-empty">작업완료 송장을 불러오는 중입니다.</div>
+              </div>
+            </aside>
+            <section class="workflow-detail">
+              <div id="completed-detail" class="inspection-detail-body">
+                <div class="inspection-header-skeleton is-completed">
+                  <div>
+                    <strong>선택 송장</strong>
+                    <span>검품완료된 송장을 선택하면 전체 상품이 표시됩니다.</span>
+                  </div>
+                  <div class="inspection-actions">
+                    <button class="btn primary" type="button" disabled>완료 취소</button>
+                  </div>
+                </div>
+                <div class="workflow-placeholder">
+                  <strong>완료된 송장</strong>
+                  <p>왼쪽 목록에서 완료 송장을 선택하세요.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
       </main>
 
       <section id="bottom-tray" class="bottom-tray">
@@ -219,6 +261,6 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="src/app/pickingApp.mjs?v=20260701-db-render-fix1"></script>
+    <script type="module" src="src/app/pickingApp.mjs?v=20260701-completed-tab1"></script>
   </body>
 </html>
