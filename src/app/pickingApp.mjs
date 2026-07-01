@@ -702,8 +702,6 @@ function renderShortagePanels() {
   const rows = state.workflowQueues?.shortageItems || [];
   if (els.shortageListCount) els.shortageListCount.textContent = `${rows.length}개`;
 
-  if (els.inspectionListCount) els.inspectionListCount.textContent = `${isCompletedView ? "완료 " : "대기 "}${invoices.length}건`;
-
   if (state.workflowQueueError) {
     renderWorkflowEmpty(els.shortageListBody, state.workflowQueueError);
     renderWorkflowEmpty(els.shortageDetail, "이벤트 큐를 불러오지 못했습니다.");
@@ -791,7 +789,6 @@ function renderInspectionPanels() {
   const isCompletedView = state.inspectionView === "completed";
   const invoices = isCompletedView ? completedInvoices : pendingInvoices;
   if (els.inspectionListCount) els.inspectionListCount.textContent = `${isCompletedView ? "완료 " : "대기 "}${invoices.length}건`;
-  if (els.inspectionListCount) els.inspectionListCount.textContent = `${invoices.length}건`;
 
   if (state.workflowQueueError) {
     renderWorkflowEmpty(els.inspectionListBody, state.workflowQueueError);
