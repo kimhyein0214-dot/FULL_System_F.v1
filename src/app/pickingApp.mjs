@@ -1,5 +1,5 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-invoice-reorder1";
-import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-session-reorder1";
+import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260701-session-reorder1";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
 const SUPABASE_KEY = "sb_publishable_XVnKGJo66GZiYTq5Ivu8dA_SjBVvX0g";
@@ -256,10 +256,18 @@ function invoiceStats(invoice) {
   };
 }
 
+function invoiceSessionRank(invoice) {
+  const session = String(invoice?.session || invoice?.raw?.am_pm || "").trim().toUpperCase();
+  if (session === "AM" || session === "오전") return 0;
+  if (session === "PM" || session === "오후") return 1;
+  return 2;
+}
+
 function compareWorkInvoices(a, b) {
   const aStats = invoiceStats(a);
   const bStats = invoiceStats(b);
   return (
+    invoiceSessionRank(a) - invoiceSessionRank(b) ||
     aStats.total - bStats.total ||
     aStats.qty - bStats.qty ||
     (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
@@ -284,6 +292,7 @@ function sortInspectionInvoices(invoices) {
     const bGold = invoiceHasGold(b);
     if (aGold !== bGold) return aGold ? 1 : -1;
     return (
+      invoiceSessionRank(a) - invoiceSessionRank(b) ||
       invoiceSequenceNo(a, 999999) - invoiceSequenceNo(b, 999999) ||
       String(a.orderGroupNo || "").localeCompare(String(b.orderGroupNo || ""), "ko", { numeric: true })
     );
@@ -1729,17 +1738,16 @@ async function reorderInvoiceSortOrder() {
     toast("송장순서 재정렬은 ?write=1에서 가능합니다.");
     return;
   }
-  if (state.session !== "ALL") {
-    toast("송장순서 재정렬은 전체 필터에서 실행해주세요.");
-    return;
-  }
   const ordered = workOrderedInvoices();
   if (!ordered.length) {
     toast("재정렬할 송장이 없습니다.");
     return;
   }
 
-  const proceed = window.confirm(`현재 작업순서 기준으로 ${ordered.length}개 송장의 sort_order를 다시 저장할까요?\n골드 송장은 뒤쪽으로 배치됩니다.`);
+  const sessionLabel = state.session === "AM" ? "오전" : state.session === "PM" ? "오후" : "전체";
+  const proceed = window.confirm(
+    `현재 ${sessionLabel} 작업순서 기준으로 ${ordered.length}개 송장의 sort_order를 다시 저장할까요?\n오전/오후는 선택된 범위 안에서 따로 재정렬됩니다.\n골드 송장은 해당 범위의 뒤쪽으로 배치됩니다.`,
+  );
   if (!proceed) return;
 
   for (let index = 0; index < ordered.length; index += 1) {

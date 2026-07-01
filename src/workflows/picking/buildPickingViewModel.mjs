@@ -3,7 +3,7 @@ import {
   normalizeCurrentDbItem,
   normalizeCurrentDbOrder,
   normalizePickingState,
-} from "../../adapters/currentDbPickingAdapter.mjs";
+} from "../../adapters/currentDbPickingAdapter.mjs?v=20260701-session-reorder1";
 
 function compareNullableNumbers(a, b) {
   if (a === null && b === null) return 0;
@@ -18,7 +18,16 @@ function compareItems(a, b) {
   return compareNullableNumbers(a.itemOrderIndex, b.itemOrderIndex);
 }
 
+function sessionRank(value) {
+  const session = String(value || "").trim().toUpperCase();
+  if (session === "AM" || session === "오전") return 0;
+  if (session === "PM" || session === "오후") return 1;
+  return 2;
+}
+
 function compareInvoices(a, b) {
+  const session = sessionRank(a.session) - sessionRank(b.session);
+  if (session !== 0) return session;
   const sort = compareNullableNumbers(a.sortOrder, b.sortOrder);
   if (sort !== 0) return sort;
   return String(a.orderGroupNo).localeCompare(String(b.orderGroupNo), "ko");

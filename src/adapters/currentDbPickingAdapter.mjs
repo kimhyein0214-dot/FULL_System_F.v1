@@ -53,6 +53,7 @@ export function normalizeCurrentDbOrder(order = {}) {
     receiptDate: firstText(order.ord_date, order.receipt_date),
     sellpiaMemo1: firstText(order.o_shop_memo, order.shop_memo, order.memo1),
     orderMemo: firstText(order.order_memo, order.o_memo),
+    session: firstText(order.am_pm, order.session, order.receipt_session),
     sortOrder: firstNumber(order.sort_order),
     raw: order,
   };
