@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-dashboard-inspection1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-keys-gold1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -426,6 +426,14 @@ function workflowItemState(invoice, item) {
 
 function workflowInvoiceState(invoice) {
   return state.workflowQueues?.workflowState?.invoiceStateByKey?.get(invoice.orderGroupNo) || null;
+}
+
+function invoiceSequenceNo(invoice, fallbackIndex = 0) {
+  return Number(invoice?.sortOrder || 0) || fallbackIndex + 1;
+}
+
+function invoiceSequenceLabel(invoice, fallbackIndex = 0) {
+  return `${invoiceSequenceNo(invoice, fallbackIndex)}번`;
 }
 
 function formatShortDate(value) {
@@ -922,7 +930,7 @@ function renderInspectionPanels() {
   }
 
   els.inspectionListBody.innerHTML = invoices
-    .map((invoice) => {
+    .map((invoice, index) => {
       const itemStates = (invoice.items || []).map((item) => workflowItemState(invoice, item)).filter(Boolean);
       const repicked = itemStates.filter((row) => row.shortageRepicked && !row.inspected && !row.cancelled).length;
       const invoiceState = workflowInvoiceState(invoice);
@@ -936,10 +944,10 @@ function renderInspectionPanels() {
         .filter(Boolean)
         .join("");
       return `<button class="workflow-row ${invoice.orderGroupNo === state.selectedInspectionGroup ? "selected" : ""}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
-        <span class="workflow-row-code">${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
+        <span class="workflow-row-code">${escapeHtml(invoiceSequenceLabel(invoice, index))}</span>
         <span class="workflow-row-main">
           <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
-          <small>상품 ${invoice.items.length}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")}</small>
+          <small>상품 ${invoice.items.length}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")} · ${escapeHtml(invoice.invoiceNo || "송장없음")}</small>
         </span>
         <span class="workflow-row-badges">${badges}</span>
       </button>`;
@@ -975,8 +983,10 @@ function renderInspectionPanels() {
         .map((item, index) => {
           const itemState = workflowItemState(selected, item);
           const rowClass = itemState?.shortageRepicked && !itemState?.inspected ? "repicked" : "";
+          const imageUrl = productImageUrl(item.sellpiaProductCode);
           return `<div class="workflow-item-row ${rowClass}">
             <span>${index + 1}</span>
+            <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
             <strong>${escapeHtml(item.ownCode || "-")}</strong>
             <em>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</em>
             <b>${Number(item.quantity) || 1}개</b>
@@ -1057,8 +1067,10 @@ function renderCompletedPanels() {
         .map((item, index) => {
           const itemState = workflowItemState(selected, item);
           const rowClass = itemState?.shortageRepicked ? "repicked" : "";
+          const imageUrl = productImageUrl(item.sellpiaProductCode);
           return `<div class="workflow-item-row ${rowClass}">
             <span>${index + 1}</span>
+            <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
             <strong>${escapeHtml(item.ownCode || "-")}</strong>
             <em>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</em>
             <b>${Number(item.quantity) || 1}개</b>
@@ -1133,7 +1145,7 @@ function render() {
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.appTab === state.activeTab);
   });
-  if (els.pickingPanel) els.pickingPanel.hidden = state.activeTab !== "picking";
+  if (els.pickingPanel) els.pickingPanel.hidden = !["picking", "gold"].includes(state.activeTab);
   if (els.dashboardPanel) els.dashboardPanel.hidden = state.activeTab !== "dashboard";
   if (els.shortagePanel) els.shortagePanel.hidden = state.activeTab !== "shortage";
   if (els.inspectionPanel) els.inspectionPanel.hidden = state.activeTab !== "inspection";
@@ -1504,18 +1516,16 @@ async function loadWorkflowData() {
 }
 
 function setActiveTab(tab) {
-  const allowedTabs = new Set(["dashboard", "picking", "shortage", "inspection", "completed"]);
+  const allowedTabs = new Set(["dashboard", "picking", "gold", "shortage", "inspection", "completed"]);
   state.activeTab = allowedTabs.has(tab) ? tab : "picking";
-  document.querySelectorAll("[data-app-tab]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.appTab === state.activeTab);
-  });
-  if (els.pickingPanel) els.pickingPanel.hidden = state.activeTab !== "picking";
-  if (els.dashboardPanel) els.dashboardPanel.hidden = state.activeTab !== "dashboard";
-  if (els.shortagePanel) els.shortagePanel.hidden = state.activeTab !== "shortage";
-  if (els.inspectionPanel) els.inspectionPanel.hidden = state.activeTab !== "inspection";
-  if (els.completedPanel) els.completedPanel.hidden = state.activeTab !== "completed";
-  renderDashboard();
-  renderCompletedPanels();
+  if (state.activeTab === "gold") {
+    state.filterMode = "gold";
+    state.searchText = "";
+    if (els.searchInput) els.searchInput.value = "";
+  } else if (tab === "picking" && state.filterMode === "gold") {
+    state.filterMode = "all";
+  }
+  render();
 }
 
 function scrollToTrayItem(key) {
@@ -1659,25 +1669,86 @@ async function toggleSelectedItem() {
   }
 }
 
+function currentWorkflowRows() {
+  if (state.activeTab === "shortage") return state.workflowQueues?.shortageItems || [];
+  if (state.activeTab === "inspection") {
+    return (state.workflowQueues?.inspectionInvoices || []).filter(invoiceMatchesInspectionFilter).filter(invoiceMatchesInspectionSearch);
+  }
+  if (state.activeTab === "completed") return completedInvoicesForSelectedDate();
+  return [];
+}
+
+function moveWorkflowSelection(delta) {
+  const rows = currentWorkflowRows();
+  if (!rows.length) return;
+  if (state.activeTab === "shortage") {
+    const keys = rows.map(({ invoice, item }) => workflowItemKey(invoice, item));
+    const current = keys.indexOf(state.selectedShortageKey);
+    state.selectedShortageKey = keys[Math.max(0, Math.min(keys.length - 1, (current >= 0 ? current : 0) + delta))];
+    renderShortagePanels();
+    return;
+  }
+  if (state.activeTab === "inspection") {
+    const keys = rows.map((invoice) => invoice.orderGroupNo);
+    const current = keys.indexOf(state.selectedInspectionGroup);
+    state.selectedInspectionGroup = keys[Math.max(0, Math.min(keys.length - 1, (current >= 0 ? current : 0) + delta))];
+    renderInspectionPanels();
+    return;
+  }
+  if (state.activeTab === "completed") {
+    const keys = rows.map((invoice) => invoice.orderGroupNo);
+    const current = keys.indexOf(state.selectedCompletedGroup);
+    state.selectedCompletedGroup = keys[Math.max(0, Math.min(keys.length - 1, (current >= 0 ? current : 0) + delta))];
+    renderCompletedPanels();
+  }
+}
+
+function focusActiveSearch() {
+  const target = state.activeTab === "inspection" ? els.inspectionSearchInput : els.searchInput;
+  target?.focus();
+  target?.select();
+}
+
+function activateTabShortcut(key) {
+  const tabs = {
+    "1": "dashboard",
+    "2": "picking",
+    "3": "gold",
+    "4": "shortage",
+    "5": "inspection",
+    "6": "completed",
+  };
+  if (!tabs[key]) return false;
+  setActiveTab(tabs[key]);
+  return true;
+}
+
 function isTypingTarget(target) {
-  return Boolean(target?.closest?.("input, textarea, select, button, [contenteditable='true']"));
+  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true']"));
 }
 
 function onGlobalKeydown(event) {
-  if (event.key.toLowerCase() === "q" && !isTypingTarget(event.target)) {
+  if (!isTypingTarget(event.target) && activateTabShortcut(event.key)) {
     event.preventDefault();
-    els.searchInput?.focus();
-    els.searchInput?.select();
     return;
   }
-  if (event.key === "Tab" && !isTypingTarget(event.target)) {
+  if (event.key.toLowerCase() === "q" && !isTypingTarget(event.target)) {
     event.preventDefault();
-    moveSelection(event.shiftKey ? -1 : 1);
+    focusActiveSearch();
+    return;
+  }
+  if ((event.key === "Tab" || event.key === "ArrowDown" || event.key === "ArrowUp") && !isTypingTarget(event.target)) {
+    event.preventDefault();
+    const delta = event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey) ? -1 : 1;
+    if (["shortage", "inspection", "completed"].includes(state.activeTab)) moveWorkflowSelection(delta);
+    else moveSelection(delta);
     return;
   }
   if (event.code === "Space" && !isTypingTarget(event.target)) {
     event.preventDefault();
-    toggleSelectedItem().catch(showError);
+    if (state.activeTab === "shortage") completeSelectedShortagePicking().catch(showError);
+    else if (state.activeTab === "inspection") completeSelectedInspection().catch(showError);
+    else toggleSelectedItem().catch(showError);
   }
 }
 
