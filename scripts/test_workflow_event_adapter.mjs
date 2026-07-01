@@ -90,5 +90,36 @@ const inspected = buildWorkflowQueues({
 
 assert.equal(inspected.inspectionInvoices.length, 0);
 
-console.log("workflow event adapter tests passed");
+const memo1Only = buildWorkflowQueues({
+  orders: [{ ...orders[0], o_shop_memo: "S47" }],
+  orderItems,
+  itemEvents: [],
+  invoiceEvents: [],
+});
 
+assert.equal(memo1Only.shortageItems.length, 2);
+assert.equal(memo1Only.shortageItems[0].state.drawerMemo, "S47");
+assert.equal(memo1Only.shortageItems[0].state.shortageQty, 1);
+
+const memo2Shortage = buildWorkflowQueues({
+  orders,
+  orderItems: [{ ...orderItems[0], o_shop_memo2: "2" }, orderItems[1]],
+  itemEvents: [],
+  invoiceEvents: [],
+});
+
+assert.equal(memo2Shortage.shortageItems.length, 1);
+assert.equal(memo2Shortage.shortageItems[0].state.shortageQty, 2);
+
+const memo2Repicked = buildWorkflowQueues({
+  orders,
+  orderItems: [{ ...orderItems[0], o_shop_memo2: "\u3141" }, orderItems[1]],
+  itemEvents: [],
+  invoiceEvents: [],
+});
+
+assert.equal(memo2Repicked.shortageItems.length, 0);
+assert.equal(memo2Repicked.inspectionInvoices.length, 1);
+assert.equal(memo2Repicked.inspectionInvoices[0].items.length, 2);
+
+console.log("workflow event adapter tests passed");

@@ -1,5 +1,7 @@
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 import {
+  INVOICE_EVENT,
+  ITEM_EVENT,
   buildWorkflowState,
   openShortageItems,
   repickedInvoicesForInspection,
@@ -7,6 +9,14 @@ import {
 
 function text(value) {
   return String(value ?? "").trim();
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const next = text(value);
+    if (next) return next;
+  }
+  return "";
 }
 
 function uniqueTexts(values = []) {
@@ -74,18 +84,125 @@ export async function fetchOrdersForWorkflowEvents(db, { itemEvents = [], invoic
   return { orders, orderItems, orderGroupNos };
 }
 
+function orderGroupNo(row = {}) {
+  return firstText(row.ord_no, row.order_group_no, row.group_no);
+}
+
+function invoiceNo(row = {}) {
+  return firstText(row.inv_no, row.dnum, row.invoice_no);
+}
+
+function receiptDate(row = {}) {
+  return firstText(row.ord_date, row.receipt_date);
+}
+
+function invoiceMemo1(row = {}) {
+  return firstText(row.o_shop_memo, row.shop_memo, row.memo1, row.sellpia_memo1);
+}
+
+function itemNo(row = {}) {
+  return firstText(row.item_no, row.sellpia_item_no, row.order_item_no);
+}
+
+function itemMemo2(row = {}) {
+  return firstText(row.o_shop_memo2, row.shop_memo2, row.memo2, row.sellpia_memo2);
+}
+
+function itemShortageQty(memo) {
+  const raw = text(memo);
+  const number = /^\d+$/.test(raw) ? raw : raw.match(/\bshortage\s*(\d+)\b/i)?.[1] || raw.match(/\ubd80\uc871\s*(\d+)/)?.[1];
+  return number ? Number(number) : 1;
+}
+
+function isRepickDoneMemo(memo) {
+  const compact = text(memo).replace(/\s+/g, "");
+  return (
+    compact === "\u3141" ||
+    compact === "\u2713" ||
+    compact === "\u2714" ||
+    compact.toLowerCase() === "done" ||
+    compact.includes("\ud53c\ud0b9\uc644\ub8cc")
+  );
+}
+
+function syntheticEventAt(row = {}) {
+  return firstText(row.updated_at, row.created_at, row.event_at, row.ord_date, row.receipt_date) || "1970-01-01T00:00:00Z";
+}
+
+export function buildSyntheticMemoEvents({ orders = [], orderItems = [] } = {}) {
+  const ordersByGroup = new Map();
+  const syntheticItemEvents = [];
+  const syntheticInvoiceEvents = [];
+  let syntheticId = -1;
+
+  for (const order of orders) {
+    const groupNo = orderGroupNo(order);
+    if (!groupNo) continue;
+    ordersByGroup.set(groupNo, order);
+    const memo1 = invoiceMemo1(order);
+    if (!memo1) continue;
+
+    syntheticInvoiceEvents.push({
+      id: syntheticId--,
+      receipt_date: receiptDate(order) || null,
+      order_group_no: groupNo,
+      invoice_no: invoiceNo(order),
+      event_type: INVOICE_EVENT.HOLD_CREATED,
+      memo: memo1,
+      source: "sellpia_memo_compat",
+      event_at: syntheticEventAt(order),
+      payload: { synthetic: true, memo1 },
+    });
+  }
+
+  for (const item of orderItems) {
+    const groupNo = orderGroupNo(item);
+    const sellpiaItemNo = itemNo(item);
+    if (!groupNo || !sellpiaItemNo) continue;
+
+    const order = ordersByGroup.get(groupNo) || {};
+    const memo1 = invoiceMemo1(order);
+    const memo2 = itemMemo2(item);
+    if (!memo1 && !memo2) continue;
+
+    const repickDone = isRepickDoneMemo(memo2);
+    syntheticItemEvents.push({
+      id: syntheticId--,
+      receipt_date: receiptDate(item) || receiptDate(order) || null,
+      order_group_no: groupNo,
+      invoice_no: invoiceNo(item) || invoiceNo(order),
+      sellpia_item_no: sellpiaItemNo,
+      sellpia_product_code: firstText(item.p_code, item.sellpia_p_code, item.sellpia_product_code),
+      own_code: firstText(item.prod_code, item.p_dpcode, item.own_code),
+      event_type: repickDone ? ITEM_EVENT.SHORTAGE_REPICK_COMPLETED : ITEM_EVENT.SHORTAGE_CREATED,
+      quantity: repickDone ? null : memo2 ? itemShortageQty(memo2) : 1,
+      memo: memo2 || memo1,
+      drawer_memo: memo1 || null,
+      source: "sellpia_memo_compat",
+      event_at: syntheticEventAt(item) || syntheticEventAt(order),
+      payload: { synthetic: true, memo1, memo2 },
+    });
+  }
+
+  return { itemEvents: syntheticItemEvents, invoiceEvents: syntheticInvoiceEvents };
+}
+
 export function buildWorkflowQueues({ orders = [], orderItems = [], itemEvents = [], invoiceEvents = [] } = {}) {
+  const syntheticEvents = buildSyntheticMemoEvents({ orders, orderItems });
+  const mergedItemEvents = [...syntheticEvents.itemEvents, ...itemEvents];
+  const mergedInvoiceEvents = [...syntheticEvents.invoiceEvents, ...invoiceEvents];
   const viewModel = buildPickingViewModel({
     orders,
     orderItems,
     pickingRows: [],
     shortageRows: [],
   });
-  const workflowState = buildWorkflowState({ itemEvents, invoiceEvents });
+  const workflowState = buildWorkflowState({ itemEvents: mergedItemEvents, invoiceEvents: mergedInvoiceEvents });
 
   return {
     viewModel,
     workflowState,
+    syntheticEvents,
     shortageItems: openShortageItems(viewModel, workflowState),
     inspectionInvoices: repickedInvoicesForInspection(viewModel, workflowState),
   };
@@ -93,11 +210,36 @@ export function buildWorkflowQueues({ orders = [], orderItems = [], itemEvents =
 
 export async function loadWorkflowQueues(db, { pageSize = 1000 } = {}) {
   const { itemEvents, invoiceEvents } = await fetchWorkflowEvents(db, { pageSize });
-  const { orders, orderItems, orderGroupNos } = await fetchOrdersForWorkflowEvents(db, {
-    itemEvents,
-    invoiceEvents,
+
+  const legacyOrders = await fetchAllRows(
+    () => db.from("orders").select("*").order("ord_date", { ascending: false, nullsFirst: false }),
     pageSize,
+  );
+
+  const legacyOrderItems = await fetchAllRows(
+    () => db.from("order_items").select("*").order("sort_order", { ascending: true, nullsFirst: false }),
+    pageSize,
+  );
+
+  const legacyEvents = buildSyntheticMemoEvents({ orders: legacyOrders, orderItems: legacyOrderItems });
+  const orderGroupNos = workflowOrderGroupNos({
+    itemEvents: [...legacyEvents.itemEvents, ...itemEvents],
+    invoiceEvents: [...legacyEvents.invoiceEvents, ...invoiceEvents],
   });
+
+  const orders = orderGroupNos.length
+    ? await fetchAllRows(
+        () => db.from("orders").select("*").in("ord_no", orderGroupNos).order("sort_order", { ascending: true, nullsFirst: false }),
+        pageSize,
+      )
+    : [];
+
+  const orderItems = orderGroupNos.length
+    ? await fetchAllRows(
+        () => db.from("order_items").select("*").in("ord_no", orderGroupNos).order("sort_order", { ascending: true, nullsFirst: false }),
+        pageSize,
+      )
+    : [];
 
   return {
     orderGroupNos,

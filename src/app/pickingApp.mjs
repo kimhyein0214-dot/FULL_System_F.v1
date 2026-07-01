@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-workflow-read2";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-workflow-read3";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -431,6 +431,7 @@ function workflowSummary() {
   const repickedItems = Array.from(queues.workflowState.itemStateByKey.values()).filter(
     (row) => row.shortageRepicked && !row.inspected && !row.cancelled,
   ).length;
+  const syntheticEventRows = (queues.syntheticEvents?.itemEvents?.length || 0) + (queues.syntheticEvents?.invoiceEvents?.length || 0);
 
   return {
     ready: true,
@@ -439,7 +440,7 @@ function workflowSummary() {
     inspectionInvoices: queues.inspectionInvoices.length,
     repickedItems,
     missingInvoices: Math.max(0, queues.orderGroupNos.length - queues.viewModel.invoices.length),
-    eventRows: queues.itemEvents.length + queues.invoiceEvents.length,
+    eventRows: queues.itemEvents.length + queues.invoiceEvents.length + syntheticEventRows,
   };
 }
 
