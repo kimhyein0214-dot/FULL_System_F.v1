@@ -928,6 +928,14 @@ input {
   font-weight: 900;
 }
 
+.workflow-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .workflow-detail-main {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);

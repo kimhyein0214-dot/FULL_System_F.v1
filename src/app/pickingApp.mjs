@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-workflow-ui1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-shortage-repick1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -742,13 +742,17 @@ function renderShortagePanels() {
   const selected = rows.find(({ invoice, item }) => workflowItemKey(invoice, item) === state.selectedShortageKey) || rows[0];
   const selectedState = selected.state || workflowItemState(selected.invoice, selected.item);
   const seller = sellerBadgeMeta(selected.invoice.seller);
+  const repickDisabled = allowWorkflowEvents ? "" : "disabled";
   els.shortageDetail.innerHTML = `<div class="workflow-detail-card">
     <div class="workflow-detail-head">
       <div>
         <strong>${escapeHtml(selected.item.ownCode || "-")}</strong>
         <span>${escapeHtml(selected.invoice.displayName || selected.invoice.csDisplayName || "-")}</span>
       </div>
-      ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+      <div class="workflow-detail-actions">
+        ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+        <button class="btn primary" data-action="shortage-repicked" data-shortage-key="${escapeHtml(workflowItemKey(selected.invoice, selected.item))}" type="button" ${repickDisabled}>피킹완료</button>
+      </div>
     </div>
     <div class="workflow-detail-main">
       <div class="workflow-photo">${productImageUrl(selected.item.sellpiaProductCode) ? `<img src="${productImageUrl(selected.item.sellpiaProductCode)}" alt="">` : "사진"}</div>
@@ -955,7 +959,10 @@ function buildItemEvent(invoice, item, eventType, overrides = {}) {
 }
 
 async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
-  if (!allowWorkflowEvents) return;
+  if (!allowWorkflowEvents) {
+    toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
+    return false;
+  }
   const { error } = await db.from("workflow_item_events").insert(buildItemEvent(invoice, item, eventType, overrides));
   if (error) {
     state.workflowEventsChecked = true;
@@ -963,11 +970,12 @@ async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
     renderMetrics();
     console.warn("workflow_item_events insert failed", error);
     toast("피킹 저장 완료 · 이벤트 테이블 미준비");
-    return;
+    return false;
   }
   state.workflowEventsChecked = true;
   state.workflowEventsReady = true;
   renderMetrics();
+  return true;
 }
 
 async function savePickingRow(invoice, item, eventType = null, eventOverrides = {}) {
@@ -1020,6 +1028,26 @@ async function saveDrawerForInvoice(invoice, drawerMemo) {
     patchLocalPickingState(invoice, item, { drawerMemo });
     await savePickingRow(invoice, item, null, { drawerMemo });
   }
+}
+
+async function completeSelectedShortagePicking(shortageKey = state.selectedShortageKey) {
+  const row = (state.workflowQueues?.shortageItems || []).find(({ invoice, item }) => workflowItemKey(invoice, item) === shortageKey);
+  if (!row) {
+    toast("미송피킹 대상을 찾지 못했습니다.");
+    return;
+  }
+
+  const ok = await saveWorkflowItemEvent(row.invoice, row.item, "shortage_repick_completed", {
+    quantity: 0,
+    memo: "shortage repicked",
+    drawerMemo: row.state?.drawerMemo || row.item.pickingState?.drawerMemo || row.invoice.sellpiaMemo1 || null,
+  });
+  if (!ok) return;
+
+  state.selectedInspectionGroup = row.invoice.orderGroupNo;
+  state.selectedShortageKey = "";
+  await loadWorkflowData();
+  toast("미송피킹 완료: 검품탭에 송장 전체가 표시됩니다.");
 }
 
 async function onOrderListClick(event) {
@@ -1381,6 +1409,11 @@ function bindEvents() {
     if (!button) return;
     state.selectedShortageKey = button.dataset.shortageKey;
     renderShortagePanels();
+  });
+  els.shortageDetail?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-action='shortage-repicked']");
+    if (!button) return;
+    completeSelectedShortagePicking(button.dataset.shortageKey).catch(showError);
   });
   els.inspectionListBody?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-inspection-group]");
