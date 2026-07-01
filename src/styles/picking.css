@@ -658,7 +658,7 @@ input {
 
 .workflow-flow-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
 }
 
@@ -676,6 +676,12 @@ input {
   border-color: #f3b5b5;
   background: var(--red-soft);
   color: var(--red);
+}
+
+.workflow-flow-grid div.warn {
+  border-color: #f2cf8d;
+  background: #fff7e8;
+  color: #b45309;
 }
 
 .workflow-flow-grid span {
@@ -737,7 +743,7 @@ input {
 
 .dashboard-workflow-status {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
 }
 

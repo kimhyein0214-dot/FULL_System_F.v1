@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-shortage-code-groups1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-dashboard-workflow1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -573,15 +573,24 @@ function inspectionSourceInvoices() {
 
 function workflowSummary() {
   const queues = state.workflowQueues;
-  const inspectionCount = inspectionSourceInvoices().filter((invoice) => !workflowInvoiceState(invoice)?.inspected).length;
+  const inspectionInvoices = inspectionSourceInvoices();
+  const pendingInspectionInvoices = inspectionInvoices.filter((invoice) => !workflowInvoiceState(invoice)?.inspected);
+  const repickedPendingInvoices = pendingInspectionInvoices.filter(invoiceHasRepickedShortage);
+  const holdInvoices = inspectionInvoices.filter((invoice) => workflowInvoiceState(invoice)?.hold || invoiceStats(invoice).hold > 0);
+  const goldInspectionInvoices = inspectionInvoices.filter(invoiceHasGold);
+  const goldInspectionItems = goldInspectionInvoices.flatMap((invoice) => invoice.items || []).filter(isGoldItem);
   if (!queues) {
     return {
       ready: false,
       status: state.workflowQueueError ? "오류" : "대기",
       shortageItems: 0,
-      inspectionInvoices: inspectionCount,
+      inspectionInvoices: pendingInspectionInvoices.length,
+      repickedInvoices: repickedPendingInvoices.length,
       completedInvoices: 0,
       repickedItems: 0,
+      holdInvoices: holdInvoices.length,
+      goldInvoices: goldInspectionInvoices.length,
+      goldItems: goldInspectionItems.length,
       missingInvoices: 0,
       eventRows: 0,
     };
@@ -596,9 +605,13 @@ function workflowSummary() {
     ready: true,
     status: "ON",
     shortageItems: queues.shortageItems.length,
-    inspectionInvoices: inspectionCount,
+    inspectionInvoices: pendingInspectionInvoices.length,
+    repickedInvoices: repickedPendingInvoices.length,
     completedInvoices: queues.inspectionCompletedInvoices.length,
     repickedItems,
+    holdInvoices: holdInvoices.length,
+    goldInvoices: goldInspectionInvoices.length,
+    goldItems: goldInspectionItems.length,
     missingInvoices: Math.max(0, queues.orderGroupNos.length - queues.viewModel.invoices.length),
     eventRows: queues.itemEvents.length + queues.invoiceEvents.length + syntheticEventRows,
   };
@@ -649,28 +662,36 @@ function renderDashboard() {
   const picked = items.filter(isPicked).length;
   const shortage = items.filter((item) => shortageQty(item) > 0).length;
   const hold = items.filter(isHold).length;
+  const pickedInvoices = invoices.filter((invoice) => invoiceStats(invoice).done).length;
+  const holdInvoices = invoices.filter((invoice) => invoiceStats(invoice).hold > 0).length;
   const noDrawer = invoices.filter(invoiceHasNoDrawer).length;
   const goldInvoices = invoices.filter(invoiceHasGold).length;
   const goldItems = items.filter(isGoldItem).length;
 
   const percent = (value, total) => (total ? Math.min(100, Math.round((value / total) * 100)) : 0);
-  const chartRows = [
-    { label: "피킹완료", value: picked, total: items.length, unit: "개", tone: "good" },
-    { label: "미송", value: shortage, total: items.length, unit: "개", tone: "danger" },
-    { label: "보류", value: hold, total: items.length, unit: "개", tone: "warn" },
-    { label: "서랍없음", value: noDrawer, total: invoices.length, unit: "건", tone: "muted" },
-    { label: "골드송장", value: goldInvoices, total: invoices.length, unit: "건", tone: "gold" },
-    { label: "골드상품", value: goldItems, total: items.length, unit: "개", tone: "gold" },
-  ];
   const workflow = workflowSummary();
   const completedRows = state.workflowQueues?.inspectionCompletedInvoices || [];
   const completedByReceiptDate = completedRows.filter((invoice) => String(invoice.receiptDate || "").slice(0, 10) === state.selectedDate).length;
   const completedByDoneDate = completedRows.filter((invoice) => completedDateForInvoice(invoice) === state.selectedDate).length;
+  const chartRows = [
+    { label: "피킹완료", value: picked, total: items.length, unit: "개", tone: "good" },
+    { label: "미송", value: shortage, total: items.length, unit: "개", tone: "danger" },
+    { label: "보류", value: hold, total: items.length, unit: "개", tone: "warn" },
+    { label: "검품대기", value: workflow.inspectionInvoices, total: Math.max(workflow.inspectionInvoices, workflow.completedInvoices), unit: "건", tone: "muted" },
+    { label: "미송완료 미검품", value: workflow.repickedInvoices, total: Math.max(workflow.inspectionInvoices, 1), unit: "건", tone: "danger" },
+    { label: "작업완료", value: workflow.completedInvoices, total: Math.max(workflow.inspectionInvoices + workflow.completedInvoices, 1), unit: "건", tone: "good" },
+    { label: "서랍없음", value: noDrawer, total: invoices.length, unit: "건", tone: "muted" },
+    { label: "골드송장", value: goldInvoices, total: invoices.length, unit: "건", tone: "gold" },
+    { label: "골드상품", value: goldItems, total: items.length, unit: "개", tone: "gold" },
+  ];
 
   els.dashboardSummary.innerHTML = `<div class="dashboard-overview">
-      <div><span>송장</span><strong>${invoices.length}</strong><em>건</em></div>
+      <div><span>선택일 접수</span><strong>${invoices.length}</strong><em>송장</em></div>
       <div><span>상품</span><strong>${items.length}</strong><em>개</em></div>
+      <div><span>피킹완료</span><strong>${pickedInvoices}</strong><em>송장</em></div>
       <div><span>완료율</span><strong>${percent(picked, items.length)}</strong><em>%</em></div>
+      <div><span>보류</span><strong>${holdInvoices}</strong><em>송장</em></div>
+      <div><span>골드</span><strong>${goldInvoices}</strong><em>송장</em></div>
     </div>
     <div class="dashboard-chart">
       ${chartRows
@@ -698,7 +719,11 @@ function renderDashboard() {
               <div><span>미송피킹 대기</span><strong>${workflow.shortageItems}</strong><em>상품</em></div>
               <div><span>검품 대기</span><strong>${workflow.inspectionInvoices}</strong><em>송장</em></div>
               <div><span>작업완료</span><strong>${workflow.completedInvoices}</strong><em>송장</em></div>
-              <div><span>피킹완료 미검품</span><strong>${workflow.repickedItems}</strong><em>상품</em></div>
+              <div class="${workflow.repickedInvoices ? "warn" : ""}"><span>미송완료 미검품</span><strong>${workflow.repickedInvoices}</strong><em>송장</em></div>
+              <div><span>미송완료 상품</span><strong>${workflow.repickedItems}</strong><em>상품</em></div>
+              <div class="${workflow.holdInvoices ? "warn" : ""}"><span>보류</span><strong>${workflow.holdInvoices}</strong><em>송장</em></div>
+              <div><span>골드 송장</span><strong>${workflow.goldInvoices}</strong><em>건</em></div>
+              <div><span>골드 상품</span><strong>${workflow.goldItems}</strong><em>개</em></div>
               <div class="${workflow.missingInvoices ? "bad" : ""}"><span>원본 연결 누락</span><strong>${workflow.missingInvoices}</strong><em>송장</em></div>
             </div>
             <p>미송피킹/검품은 선택 날짜가 아니라 workflow event 상태 기준으로 집계됩니다.</p>`
@@ -710,7 +735,9 @@ function renderDashboard() {
         <div><span>선택 접수일 완료</span><strong>${completedByReceiptDate}</strong><em>건</em></div>
         <div><span>선택 완료일 완료</span><strong>${completedByDoneDate}</strong><em>건</em></div>
         <div><span>검품 대기</span><strong>${workflow.inspectionInvoices}</strong><em>건</em></div>
+        <div><span>미송완료 미검품</span><strong>${workflow.repickedInvoices}</strong><em>건</em></div>
         <div><span>미송피킹 대기</span><strong>${workflow.shortageItems}</strong><em>상품</em></div>
+        <div><span>작업완료 전체</span><strong>${workflow.completedInvoices}</strong><em>건</em></div>
       </div>
       <div class="dashboard-actions">
         <button class="btn" data-dashboard-tab="shortage" type="button">미송피킹 보기</button>
