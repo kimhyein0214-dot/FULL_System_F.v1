@@ -9,7 +9,7 @@ const JO_SIZE = 4;
 
 const params = new URLSearchParams(location.search);
 const allowWrites = params.get("write") === "1";
-const allowOrderReorder = params.get("reorder") !== "0";
+const allowOrderReorder = allowWrites && params.get("reorder") !== "0";
 const allowWorkflowEvents = params.get("events") !== "0";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
