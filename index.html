@@ -114,7 +114,8 @@
             <div class="dashboard-card">
               <h3>내보내기 / 보조 기능</h3>
               <div class="dashboard-actions">
-                <button class="btn" disabled>토글 CSV</button>
+                <button class="btn primary" data-dashboard-action="reorder-invoices" type="button">송장순서 재정렬</button>
+                <button class="btn" data-dashboard-action="toggle-csv" type="button">토글 CSV</button>
                 <button class="btn" disabled>보강현황</button>
                 <button class="btn" disabled>주문리스트</button>
               </div>
@@ -265,6 +266,6 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="src/app/pickingApp.mjs?v=20260701-inspection-gold-tray1"></script>
+    <script type="module" src="src/app/pickingApp.mjs?v=20260701-invoice-reorder1"></script>
   </body>
 </html>

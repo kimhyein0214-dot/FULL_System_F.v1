@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-gold-tray1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-invoice-reorder1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -256,19 +256,26 @@ function invoiceStats(invoice) {
   };
 }
 
+function compareWorkInvoices(a, b) {
+  const aStats = invoiceStats(a);
+  const bStats = invoiceStats(b);
+  return (
+    aStats.total - bStats.total ||
+    aStats.qty - bStats.qty ||
+    (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
+    String(a.orderGroupNo).localeCompare(String(b.orderGroupNo), "ko", { numeric: true })
+  );
+}
+
 function sortInvoices(invoices) {
   const rows = [...invoices];
   if (!state.workSortMode) return rows;
-  return rows.sort((a, b) => {
-    const aStats = invoiceStats(a);
-    const bStats = invoiceStats(b);
-    return (
-      aStats.total - bStats.total ||
-      aStats.qty - bStats.qty ||
-      (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
-      String(a.orderGroupNo).localeCompare(String(b.orderGroupNo), "ko")
-    );
-  });
+  return rows.sort(compareWorkInvoices);
+}
+
+function workOrderedInvoices() {
+  const sorted = [...(state.viewModel?.invoices || [])].sort(compareWorkInvoices);
+  return [...sorted.filter((invoice) => !invoiceHasGold(invoice)), ...sorted.filter(invoiceHasGold)];
 }
 
 function sortInspectionInvoices(invoices) {
@@ -1564,6 +1571,193 @@ async function saveDrawerForInvoice(invoice, drawerMemo) {
   }
 }
 
+function firstRawText(source, ...keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value === null || value === undefined) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = (rows || []).map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function timestampForFilename() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+function itemSellerProductName(item) {
+  return firstRawText(item.raw, "seller_product_name", "seller_p_name", "mall_product_name") || item.productName || "";
+}
+
+function itemSellerOptionName(item) {
+  return firstRawText(item.raw, "seller_option_name", "seller_p_option", "mall_option_name") || item.optionName || "";
+}
+
+function invoiceReceiverTel(invoice) {
+  return firstRawText(invoice.raw, "receiver_tel", "recipient_tel", "receiver_phone", "recipient_phone", "tel");
+}
+
+function invoiceReceiverMobile(invoice) {
+  return (
+    firstRawText(invoice.raw, "receiver_mobile", "recipient_mobile", "receiver_hp", "recipient_hp", "mobile") ||
+    (!invoiceReceiverTel(invoice) ? invoice.recipientPhone : "")
+  );
+}
+
+function invoiceZipcode(invoice) {
+  return firstRawText(invoice.raw, "zipcode", "zip_code", "post_code", "receiver_zipcode", "recipient_zipcode", "receiver_zip");
+}
+
+function invoiceAddress(invoice) {
+  const direct = firstRawText(invoice.raw, "receiver_address", "recipient_address", "address", "addr", "receiver_addr", "recipient_addr");
+  if (direct) return direct;
+  return [firstRawText(invoice.raw, "receiver_addr1", "recipient_addr1", "addr1"), firstRawText(invoice.raw, "receiver_addr2", "recipient_addr2", "addr2")]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function buildToggleCsvRows() {
+  const headers = [
+    "주문번호",
+    "접수일자",
+    "주문품목No",
+    "판매처상품명",
+    "판매처옵션명",
+    "주문수량",
+    "수취인명",
+    "수취인연락처",
+    "수취인핸드폰",
+    "우편번호",
+    "주소",
+    "주문메모",
+  ];
+  const rows = [headers];
+  workOrderedInvoices().forEach((invoice) => {
+    (invoice.items || []).forEach((item) => {
+      rows.push([
+        invoice.orderGroupNo || "",
+        invoice.receiptDate || state.selectedDate,
+        item.sellpiaItemNo || "",
+        itemSellerProductName(item),
+        itemSellerOptionName(item),
+        item.quantity || 1,
+        invoice.recipientName || invoice.displayName || "",
+        invoiceReceiverTel(invoice),
+        invoiceReceiverMobile(invoice),
+        invoiceZipcode(invoice),
+        invoiceAddress(invoice),
+        firstRawText(item.raw, "order_memo", "o_memo", "memo") || invoice.orderMemo || "",
+      ]);
+    });
+  });
+  return rows;
+}
+
+function validateToggleCsvRows(rows) {
+  const stats = {
+    total: 0,
+    missingRequired: 0,
+    missingName: 0,
+    missingTel: 0,
+    missingZip: 0,
+    missingAddress: 0,
+    missingItemNo: 0,
+    badItemNo: 0,
+  };
+  for (let index = 1; index < rows.length; index += 1) {
+    const row = rows[index];
+    stats.total += 1;
+    const orderNo = String(row[0] || "").trim();
+    const itemNo = String(row[2] || "").trim();
+    const name = String(row[6] || "").trim();
+    const hasTel = String(row[7] || "").trim() || String(row[8] || "").trim();
+    const zip = String(row[9] || "").trim();
+    const address = String(row[10] || "").trim();
+    if (!itemNo) stats.missingItemNo += 1;
+    if (itemNo && orderNo && itemNo === orderNo) stats.badItemNo += 1;
+    if (!name) stats.missingName += 1;
+    if (!hasTel) stats.missingTel += 1;
+    if (!zip) stats.missingZip += 1;
+    if (!address) stats.missingAddress += 1;
+    if (!name || !hasTel || !zip || !address || !itemNo || itemNo === orderNo) stats.missingRequired += 1;
+  }
+  return stats;
+}
+
+function exportToggleCsv() {
+  if (!state.viewModel?.invoices?.length) {
+    toast("토글 CSV 대상이 없습니다.");
+    return;
+  }
+  if (state.session !== "ALL" && !window.confirm("현재 오전/오후 필터가 적용되어 있습니다. 현재 필터 데이터만 토글 CSV로 받을까요?")) {
+    return;
+  }
+  const rows = buildToggleCsvRows();
+  const stats = validateToggleCsvRows(rows);
+  if (stats.missingRequired > 0) {
+    const proceed = window.confirm(
+      `토글 등록 필수정보가 누락된 행이 있습니다.\n\n총 ${stats.total}행 중 ${stats.missingRequired}행 누락\n- 수취인명: ${stats.missingName}\n- 연락처: ${stats.missingTel}\n- 우편번호: ${stats.missingZip}\n- 주소: ${stats.missingAddress}\n- 주문품목No: ${stats.missingItemNo}\n- 주문번호로 들어간 품목No: ${stats.badItemNo}\n\n그래도 다운로드할까요?`,
+    );
+    if (!proceed) return;
+  }
+  downloadCsv(`togle_registration_${timestampForFilename()}.csv`, rows);
+  toast(`토글 CSV ${rows.length - 1}행 다운로드`);
+}
+
+async function reorderInvoiceSortOrder() {
+  if (!allowWrites) {
+    toast("송장순서 재정렬은 ?write=1에서 가능합니다.");
+    return;
+  }
+  if (state.session !== "ALL") {
+    toast("송장순서 재정렬은 전체 필터에서 실행해주세요.");
+    return;
+  }
+  const ordered = workOrderedInvoices();
+  if (!ordered.length) {
+    toast("재정렬할 송장이 없습니다.");
+    return;
+  }
+
+  const proceed = window.confirm(`현재 작업순서 기준으로 ${ordered.length}개 송장의 sort_order를 다시 저장할까요?\n골드 송장은 뒤쪽으로 배치됩니다.`);
+  if (!proceed) return;
+
+  for (let index = 0; index < ordered.length; index += 1) {
+    const invoice = ordered[index];
+    const nextSortOrder = index + 1;
+    const { error } = await db.from("orders").update({ sort_order: nextSortOrder }).eq("ord_no", invoice.orderGroupNo);
+    if (error) throw error;
+    invoice.sortOrder = nextSortOrder;
+  }
+
+  state.workSortMode = false;
+  els.sortToggle.classList.remove("primary");
+  els.sortToggle.textContent = "송장순서";
+  state.currentGroup = 0;
+  await loadPickingData();
+  toast(`송장순서 재정렬 완료: ${ordered.length}건`);
+}
+
 async function completeSelectedShortagePicking(shortageKey = state.selectedShortageKey) {
   const row = (state.workflowQueues?.shortageItems || []).find(({ invoice, item }) => workflowItemKey(invoice, item) === shortageKey);
   if (!row) {
@@ -2137,6 +2331,16 @@ function bindEvents() {
     const button = event.target.closest("[data-dashboard-tab]");
     if (!button) return;
     setActiveTab(button.dataset.dashboardTab);
+  });
+  els.dashboardPanel?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-dashboard-action]");
+    if (!button) return;
+    if (button.dataset.dashboardAction === "reorder-invoices") {
+      reorderInvoiceSortOrder().catch(showError);
+    }
+    if (button.dataset.dashboardAction === "toggle-csv") {
+      exportToggleCsv();
+    }
   });
   els.groupList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-group]");
