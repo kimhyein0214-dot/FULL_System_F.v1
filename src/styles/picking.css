@@ -881,6 +881,53 @@ input {
   background: #eef4ff;
 }
 
+.workflow-row.has-shortage {
+  border-left: 4px solid var(--red);
+  background: #fff7f7;
+}
+
+.workflow-row.has-shortage:hover,
+.workflow-row.has-shortage.selected {
+  background: #ffecec;
+}
+
+.workflow-row.is-hold {
+  border-left: 4px solid var(--purple);
+  background: var(--purple-soft);
+}
+
+.workflow-row.is-hold:hover,
+.workflow-row.is-hold.selected {
+  background: #ede9fe;
+}
+
+.workflow-row.is-gold {
+  border-left: 4px solid #d89a00;
+  background: #fffbee;
+}
+
+.workflow-row.is-gold:hover,
+.workflow-row.is-gold.selected {
+  background: #fff4cc;
+}
+
+.workflow-row.is-hold.is-gold,
+.workflow-row.is-hold.has-shortage {
+  border-left-color: var(--purple);
+  background: var(--purple-soft);
+}
+
+.workflow-row.is-hold.is-gold:hover,
+.workflow-row.is-hold.is-gold.selected,
+.workflow-row.is-hold.has-shortage:hover,
+.workflow-row.is-hold.has-shortage.selected {
+  background: #ede9fe;
+}
+
+.workflow-row.selected {
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.45);
+}
+
 .workflow-row-code {
   color: #1f3f94;
   font-size: 14px;

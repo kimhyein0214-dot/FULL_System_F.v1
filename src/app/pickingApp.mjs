@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-all1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-ux1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -986,6 +986,15 @@ function renderInspectionPanels() {
       const repicked = itemStates.filter((row) => row.shortageRepicked && !row.inspected && !row.cancelled).length;
       const invoiceState = workflowInvoiceState(invoice);
       const seller = sellerBadgeMeta(invoice.seller);
+      const rowClasses = [
+        "workflow-row",
+        invoice.orderGroupNo === state.selectedInspectionGroup ? "selected" : "",
+        invoiceState?.hold ? "is-hold" : "",
+        repicked ? "has-shortage" : "",
+        invoiceHasGold(invoice) ? "is-gold" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       const badges = [
         seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : "",
         invoiceHasGold(invoice) ? '<span class="workflow-row-badge gold">골드</span>' : "",
@@ -994,7 +1003,7 @@ function renderInspectionPanels() {
       ]
         .filter(Boolean)
         .join("");
-      return `<button class="workflow-row ${invoice.orderGroupNo === state.selectedInspectionGroup ? "selected" : ""}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
+      return `<button class="${rowClasses}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
         <span class="workflow-row-code">${escapeHtml(invoiceSequenceLabel(invoice, index))}</span>
         <span class="workflow-row-main">
           <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
@@ -1433,6 +1442,7 @@ async function completeSelectedInspection(orderGroupNo = state.selectedInspectio
   const ok = await saveWorkflowInvoiceEvent(invoice, "inspection_completed", { memo: "inspection completed" });
   if (!ok) return;
   state.activeTab = "completed";
+  state.completedDateMode = "completed";
   state.selectedCompletedGroup = invoice.orderGroupNo;
   state.selectedInspectionGroup = "";
   await loadWorkflowData();
