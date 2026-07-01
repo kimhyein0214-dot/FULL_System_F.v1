@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-dashboard-workflow1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-gold-tray1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -267,6 +267,18 @@ function sortInvoices(invoices) {
       aStats.qty - bStats.qty ||
       (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
       String(a.orderGroupNo).localeCompare(String(b.orderGroupNo), "ko")
+    );
+  });
+}
+
+function sortInspectionInvoices(invoices) {
+  return [...(invoices || [])].sort((a, b) => {
+    const aGold = invoiceHasGold(a);
+    const bGold = invoiceHasGold(b);
+    if (aGold !== bGold) return aGold ? 1 : -1;
+    return (
+      invoiceSequenceNo(a, 999999) - invoiceSequenceNo(b, 999999) ||
+      String(a.orderGroupNo || "").localeCompare(String(b.orderGroupNo || ""), "ko", { numeric: true })
     );
   });
 }
@@ -568,7 +580,9 @@ function isInspectionVisibleBaseInvoice(invoice) {
 }
 
 function inspectionSourceInvoices() {
-  return mergeInvoicesUnique(state.viewModel?.invoices || [], state.workflowQueues?.inspectionInvoices || []).filter(isInspectionVisibleBaseInvoice);
+  return sortInspectionInvoices(
+    mergeInvoicesUnique(state.viewModel?.invoices || [], state.workflowQueues?.inspectionInvoices || []).filter(isInspectionVisibleBaseInvoice),
+  );
 }
 
 function workflowSummary() {
@@ -783,13 +797,14 @@ function renderTray() {
       const shortage = slotRows.filter(({ item }) => shortageQty(item) > 0).length;
       const firstInvoice = slotRows[0]?.invoice;
       const title = firstInvoice
-        ? `${index + 1}번 · ${firstInvoice.displayName || firstInvoice.csDisplayName || firstInvoice.invoiceNo || ""}`
+        ? `${index + 1}번 · 송장 ${invoiceSequenceLabel(firstInvoice)} · ${firstInvoice.displayName || firstInvoice.csDisplayName || firstInvoice.invoiceNo || ""}`
         : `${index + 1}번`;
       const body = slotRows.length
         ? slotRows
-            .map(({ invoice, item }) => {
+            .map(({ invoice, item, itemIndex }) => {
               const meta = itemStatusMeta(item);
               const key = itemSlotKey(invoice, item);
+              const itemNo = itemOrderNo(item, itemIndex);
               const classes = [
                 "tray-item",
                 meta.className,
@@ -801,6 +816,7 @@ function renderTray() {
               return `<button class="${classes}" data-tray-key="${escapeHtml(key)}" type="button">
                 <span class="tray-item-check">${isPicked(item) ? "✓" : ""}</span>
                 <span class="tray-item-main">
+                  <span class="tray-item-seq">송장 ${escapeHtml(invoiceSequenceLabel(invoice))} · 상품 ${itemNo}번</span>
                   <strong>${escapeHtml(item.ownCode || "-")}</strong>
                   <small>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</small>
                 </span>

@@ -2197,6 +2197,13 @@ input {
   gap: 1px;
 }
 
+.tray-item-seq {
+  color: #2563eb;
+  font-size: 10px;
+  font-weight: 1000;
+  line-height: 1.05;
+}
+
 .tray-item-main strong {
   font-size: 12px;
   font-weight: 1000;
