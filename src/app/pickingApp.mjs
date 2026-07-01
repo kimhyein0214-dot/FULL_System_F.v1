@@ -919,10 +919,15 @@ function renderGroups() {
       ]
         .filter(Boolean)
         .join(" ");
-      return `<button class="${classes}" data-group="${index}">
-        <span>${escapeHtml(info.label)}</span>
-        <span>${stats.done}/${stats.total}${stats.shortage ? ` · 미송 ${stats.shortage}` : ""}</span>
-      </button>`;
+      const bulkTargets = groupBulkTargets(group);
+      const bulkDone = bulkTargets.length > 0 && bulkTargets.every(({ item }) => isPicked(item));
+      return `<div class="group-row">
+        <button class="${classes}" data-group="${index}" type="button">
+          <span>${escapeHtml(info.label)}</span>
+          <span>${stats.done}/${stats.total}${stats.shortage ? ` · 미송 ${stats.shortage}` : ""}</span>
+        </button>
+        <button class="group-bulk-btn ${bulkDone ? "done" : ""}" data-bulk-group="${index}" type="button" title="${bulkDone ? "체크 취소" : "일괄 체크"}" ${bulkTargets.length ? "" : "disabled"}>${bulkDone ? "↩" : "☑"}</button>
+      </div>`;
     })
     .join("");
 }
@@ -943,6 +948,14 @@ function renderProgress(invoices) {
     state.searchText || state.filterMode !== "all" ? filterLabel(state.filterMode) : groupLabel;
   els.progressText.textContent = `${done}/${total} 완료`;
   els.progressFill.style.width = `${pct}%`;
+}
+
+function groupBulkTargets(group = []) {
+  return group.flatMap((invoice) =>
+    (invoice.items || [])
+      .filter((item) => shortageQty(item) === 0 && !isHold(item))
+      .map((item) => ({ invoice, item })),
+  );
 }
 
 function renderOrderList() {
@@ -2043,6 +2056,40 @@ function onDrawerChange(event) {
     .catch((error) => toast(`서랍번호 저장 실패: ${error.message}`));
 }
 
+async function bulkToggleGroup(groupIndex) {
+  if (!allowWrites) {
+    toast("읽기전용입니다. 조 일괄 체크는 ?write=1에서 가능합니다.");
+    return;
+  }
+
+  const group = state.groups[groupIndex] || [];
+  const targets = groupBulkTargets(group);
+  if (!targets.length) {
+    toast("일괄 체크할 상품이 없습니다.");
+    return;
+  }
+
+  const nextPicked = !targets.every(({ item }) => isPicked(item));
+  const changed = targets.filter(({ item }) => isPicked(item) !== nextPicked);
+  if (!changed.length) {
+    toast("변경할 상품이 없습니다.");
+    return;
+  }
+
+  changed.forEach(({ invoice, item }) => patchLocalPickingState(invoice, item, { isPicked: nextPicked }));
+  render();
+
+  try {
+    for (const { invoice, item } of changed) {
+      await savePickingRow(invoice, item, nextPicked ? "picked" : "pick_unchecked");
+    }
+    toast(`${state.groupInfos[groupIndex]?.label || `${groupIndex + 1}조`} ${nextPicked ? "일괄 체크" : "일괄 체크 취소"} 완료: ${changed.length}건`);
+  } catch (error) {
+    toast(`조 일괄 체크 저장 실패: ${error.message}`);
+    await loadPickingData();
+  }
+}
+
 async function loadPickingData() {
   els.orderList.innerHTML = '<div class="empty">데이터를 불러오는 중입니다.</div>';
   const selectedDate = state.selectedDate;
@@ -2414,6 +2461,12 @@ function bindEvents() {
     }
   });
   els.groupList.addEventListener("click", (event) => {
+    const bulkButton = event.target.closest("[data-bulk-group]");
+    if (bulkButton) {
+      event.stopPropagation();
+      bulkToggleGroup(Number(bulkButton.dataset.bulkGroup)).catch(showError);
+      return;
+    }
     const button = event.target.closest("[data-group]");
     if (!button) return;
     state.currentGroup = Number(button.dataset.group);
