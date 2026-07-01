@@ -224,6 +224,7 @@ export function openShortageItems(viewModel, workflowState) {
 export function repickedInvoicesForInspection(viewModel, workflowState) {
   return (viewModel?.invoices || []).filter((invoice) => {
     const invoiceState = workflowState.invoiceStateByKey.get(invoice.orderGroupNo);
+    if (invoiceState?.inspected || invoiceState?.cancelled) return false;
     if (invoiceState?.shortageInvoiceRepicked && !invoiceState?.inspected && !invoiceState?.cancelled) return true;
 
     return (invoice.items || []).some((item) => {

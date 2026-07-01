@@ -898,6 +898,11 @@ input {
   color: var(--amber);
 }
 
+.workflow-row-badge.hold {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
 .workflow-detail-card {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -993,6 +998,33 @@ input {
   padding: 8px;
 }
 
+.workflow-memo-editor {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.workflow-memo-editor label {
+  display: grid;
+  gap: 4px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.workflow-memo-editor input,
+.workflow-memo-editor textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 8px;
+  color: #111827;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .workflow-detail-text dt {
   color: var(--muted);
   font-size: 11px;
@@ -1034,6 +1066,15 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.inspection-actions > button[disabled]:not([data-action]) {
+  display: none;
+}
+
+.inspection-header-skeleton.is-hold {
+  border-left: 4px solid #8b5cf6;
+  background: #f5f3ff;
 }
 
 .inspection-detail-body {

@@ -103,4 +103,18 @@ const crossDayInspectedState = buildWorkflowState({
 
 assert.equal(repickedInvoicesForInspection(viewModel, crossDayInspectedState).length, 0);
 
+const invoiceInspectedState = buildWorkflowState({
+  itemEvents: crossDayEvents,
+  invoiceEvents: [
+    {
+      id: 4,
+      order_group_no: "G1",
+      event_type: INVOICE_EVENT.INSPECTION_COMPLETED,
+      event_at: "2026-07-02T02:00:00Z",
+    },
+  ],
+});
+
+assert.equal(repickedInvoicesForInspection(viewModel, invoiceInspectedState).length, 0);
+
 console.log("workflow event tests passed");

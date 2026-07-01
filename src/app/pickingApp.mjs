@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-shortage-repick1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-actions1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -766,6 +766,17 @@ function renderShortagePanels() {
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>
           <div><dt>마지막 이벤트</dt><dd>${escapeHtml(formatShortDate(selectedState?.lastEventAt))}</dd></div>
         </dl>
+        <div class="workflow-memo-editor">
+          <label>
+            <span>관리메모</span>
+            <input data-shortage-field="drawerMemo" value="${escapeHtml(selectedState?.drawerMemo || selected.invoice.sellpiaMemo1 || "")}" placeholder="서랍번호/CS메모">
+          </label>
+          <label>
+            <span>관리메모2</span>
+            <textarea data-shortage-field="memo" rows="2" placeholder="상품별 미송 메모">${escapeHtml(selectedState?.memo || selected.item.sellpiaMemo2 || "")}</textarea>
+          </label>
+          <button class="btn" data-action="shortage-memo-save" data-shortage-key="${escapeHtml(workflowItemKey(selected.invoice, selected.item))}" type="button" ${repickDisabled}>메모 저장</button>
+        </div>
       </div>
     </div>
   </div>`;
@@ -815,12 +826,18 @@ function renderInspectionPanels() {
   const selected = invoices.find((invoice) => invoice.orderGroupNo === state.selectedInspectionGroup) || invoices[0];
   const seller = sellerBadgeMeta(selected.seller);
   const invoiceState = workflowInvoiceState(selected);
-  els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton">
+  const actionDisabled = allowWorkflowEvents ? "" : "disabled";
+  const holdAction = invoiceState?.hold ? "inspection-hold-release" : "inspection-hold";
+  const holdLabel = invoiceState?.hold ? "보류 해제" : "보류 처리";
+  els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""}">
       <div>
         <strong>${escapeHtml(selected.invoiceNo || "송장없음")}</strong>
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
       </div>
       <div class="inspection-actions">
+        ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
+        <button class="btn" data-action="${holdAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${holdLabel}</button>
+        <button class="btn primary" data-action="inspection-complete" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>완료 처리</button>
         ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         <button class="btn" type="button" disabled>보류 처리</button>
         <button class="btn primary" type="button" disabled>완료 처리</button>
@@ -958,6 +975,22 @@ function buildItemEvent(invoice, item, eventType, overrides = {}) {
   };
 }
 
+function buildInvoiceEvent(invoice, eventType, overrides = {}) {
+  return {
+    receipt_date: invoice.receiptDate || state.selectedDate,
+    order_group_no: invoice.orderGroupNo,
+    invoice_no: invoice.invoiceNo || "",
+    event_type: eventType,
+    memo: overrides.memo || null,
+    actor: "front",
+    source: "f_v1_inspection",
+    payload: {
+      displayName: invoice.displayName || invoice.csDisplayName || "",
+      itemCount: (invoice.items || []).length,
+    },
+  };
+}
+
 async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
   if (!allowWorkflowEvents) {
     toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
@@ -970,6 +1003,26 @@ async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
     renderMetrics();
     console.warn("workflow_item_events insert failed", error);
     toast("피킹 저장 완료 · 이벤트 테이블 미준비");
+    return false;
+  }
+  state.workflowEventsChecked = true;
+  state.workflowEventsReady = true;
+  renderMetrics();
+  return true;
+}
+
+async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
+  if (!allowWorkflowEvents) {
+    toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
+    return false;
+  }
+  const { error } = await db.from("workflow_invoice_events").insert(buildInvoiceEvent(invoice, eventType, overrides));
+  if (error) {
+    state.workflowEventsChecked = true;
+    state.workflowEventsReady = false;
+    renderMetrics();
+    console.warn("workflow_invoice_events insert failed", error);
+    toast("송장 이벤트 저장 실패");
     return false;
   }
   state.workflowEventsChecked = true;
@@ -1048,6 +1101,59 @@ async function completeSelectedShortagePicking(shortageKey = state.selectedShort
   state.selectedShortageKey = "";
   await loadWorkflowData();
   toast("미송피킹 완료: 검품탭에 송장 전체가 표시됩니다.");
+}
+
+async function saveSelectedShortageMemo(shortageKey = state.selectedShortageKey) {
+  const row = (state.workflowQueues?.shortageItems || []).find(({ invoice, item }) => workflowItemKey(invoice, item) === shortageKey);
+  if (!row) {
+    toast("미송피킹 대상을 찾지 못했습니다.");
+    return;
+  }
+  const drawerMemo = els.shortageDetail?.querySelector("[data-shortage-field='drawerMemo']")?.value?.trim() || "";
+  const memo = els.shortageDetail?.querySelector("[data-shortage-field='memo']")?.value?.trim() || "";
+  const qty = Number(row.state?.shortageQty || 0) || 1;
+  const ok = await saveWorkflowItemEvent(row.invoice, row.item, "shortage_qty_changed", {
+    quantity: qty,
+    memo,
+    drawerMemo,
+  });
+  if (!ok) return;
+  await loadWorkflowData();
+  state.selectedShortageKey = shortageKey;
+  renderShortagePanels();
+  toast("미송 메모 저장 완료");
+}
+
+function selectedInspectionInvoice(orderGroupNo = state.selectedInspectionGroup) {
+  return (state.workflowQueues?.inspectionInvoices || []).find((invoice) => invoice.orderGroupNo === orderGroupNo) || null;
+}
+
+async function completeSelectedInspection(orderGroupNo = state.selectedInspectionGroup) {
+  const invoice = selectedInspectionInvoice(orderGroupNo);
+  if (!invoice) {
+    toast("검품 대기 송장을 찾지 못했습니다.");
+    return;
+  }
+  const ok = await saveWorkflowInvoiceEvent(invoice, "inspection_completed", { memo: "inspection completed" });
+  if (!ok) return;
+  state.selectedInspectionGroup = "";
+  await loadWorkflowData();
+  toast("검품 완료 처리되었습니다.");
+}
+
+async function toggleSelectedInspectionHold(orderGroupNo = state.selectedInspectionGroup) {
+  const invoice = selectedInspectionInvoice(orderGroupNo);
+  if (!invoice) {
+    toast("검품 대기 송장을 찾지 못했습니다.");
+    return;
+  }
+  const invoiceState = workflowInvoiceState(invoice);
+  const eventType = invoiceState?.hold ? "hold_released" : "hold_created";
+  const ok = await saveWorkflowInvoiceEvent(invoice, eventType, { memo: invoiceState?.hold ? "hold released" : "hold created" });
+  if (!ok) return;
+  state.selectedInspectionGroup = invoice.orderGroupNo;
+  await loadWorkflowData();
+  toast(invoiceState?.hold ? "보류 해제되었습니다." : "보류 처리되었습니다.");
 }
 
 async function onOrderListClick(event) {
@@ -1411,15 +1517,30 @@ function bindEvents() {
     renderShortagePanels();
   });
   els.shortageDetail?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-action='shortage-repicked']");
+    const button = event.target.closest("[data-action]");
     if (!button) return;
-    completeSelectedShortagePicking(button.dataset.shortageKey).catch(showError);
+    if (button.dataset.action === "shortage-repicked") {
+      completeSelectedShortagePicking(button.dataset.shortageKey).catch(showError);
+    }
+    if (button.dataset.action === "shortage-memo-save") {
+      saveSelectedShortageMemo(button.dataset.shortageKey).catch(showError);
+    }
   });
   els.inspectionListBody?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-inspection-group]");
     if (!button) return;
     state.selectedInspectionGroup = button.dataset.inspectionGroup;
     renderInspectionPanels();
+  });
+  els.inspectionDetail?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-action]");
+    if (!button) return;
+    if (button.dataset.action === "inspection-complete") {
+      completeSelectedInspection(button.dataset.inspectionGroup).catch(showError);
+    }
+    if (button.dataset.action === "inspection-hold" || button.dataset.action === "inspection-hold-release") {
+      toggleSelectedInspectionHold(button.dataset.inspectionGroup).catch(showError);
+    }
   });
   els.trayHandle?.addEventListener("click", () => {
     state.trayOpen = !state.trayOpen;
