@@ -282,9 +282,17 @@ function sortInvoices(invoices) {
   return rows.sort(compareWorkInvoices);
 }
 
-function workOrderedInvoices() {
-  const sorted = [...(state.viewModel?.invoices || [])].sort(compareWorkInvoices);
+function orderedInvoicesForSystemSequence(invoices = []) {
+  const sorted = [...invoices].sort(compareWorkInvoices);
   return [...sorted.filter((invoice) => !invoiceHasGold(invoice)), ...sorted.filter(invoiceHasGold)];
+}
+
+function workOrderedInvoices() {
+  return orderedInvoicesForSystemSequence(state.viewModel?.invoices || []);
+}
+
+function workflowOrderedInvoices() {
+  return orderedInvoicesForSystemSequence(state.workflowQueues?.viewModel?.invoices || []);
 }
 
 function sortInspectionInvoices(invoices) {
@@ -294,7 +302,7 @@ function sortInspectionInvoices(invoices) {
     if (aGold !== bGold) return aGold ? 1 : -1;
     return (
       invoiceSessionRank(a) - invoiceSessionRank(b) ||
-      invoiceSequenceNo(a, 999999) - invoiceSequenceNo(b, 999999) ||
+      visibleInvoiceSequenceNo(a, 999999) - visibleInvoiceSequenceNo(b, 999999) ||
       String(a.orderGroupNo || "").localeCompare(String(b.orderGroupNo || ""), "ko", { numeric: true })
     );
   });
@@ -472,8 +480,23 @@ function invoiceSequenceLabel(invoice, fallbackIndex = 0) {
   return `${invoiceSequenceNo(invoice, fallbackIndex)}번`;
 }
 
+function systemInvoiceKey(invoice) {
+  return String(invoice?.orderGroupNo || invoice?.invoiceNo || "").trim();
+}
+
+function invoiceSystemSequenceNo(invoice, fallbackIndex = 0) {
+  const key = systemInvoiceKey(invoice);
+  if (key) {
+    for (const rows of [workOrderedInvoices(), workflowOrderedInvoices()]) {
+      const index = rows.findIndex((row) => systemInvoiceKey(row) === key);
+      if (index >= 0) return index + 1;
+    }
+  }
+  return fallbackIndex + 1;
+}
+
 function visibleInvoiceSequenceNo(invoice, fallbackIndex = 0) {
-  return invoiceSequenceNo(invoice, fallbackIndex);
+  return invoiceSystemSequenceNo(invoice, fallbackIndex);
 }
 
 function visibleInvoiceSequenceLabel(invoice, fallbackIndex = 0) {
@@ -802,7 +825,7 @@ function renderTray() {
   if (!els.trayBoard) return;
   const invoices = currentTrayInvoices();
   const rows = invoices.flatMap((invoice, invoiceIndex) =>
-    (invoice.items || []).map((item, itemIndex) => ({ invoice, item, invoiceIndex, itemIndex })),
+    (invoice.items || []).map((item) => ({ invoice, item, invoiceIndex })),
   );
   const done = rows.filter(({ item }) => isPicked(item)).length;
   const groupLabel =
@@ -834,14 +857,13 @@ function renderTray() {
       const shortage = slotRows.filter(({ item }) => shortageQty(item) > 0).length;
       const firstInvoice = slotRows[0]?.invoice;
       const title = firstInvoice
-        ? `${index + 1}번 · ${invoiceSequenceWithGroupLabel(firstInvoice)} · ${firstInvoice.displayName || firstInvoice.csDisplayName || ""}`
+        ? `${invoiceSequenceWithGroupLabel(firstInvoice)} · ${firstInvoice.displayName || firstInvoice.csDisplayName || ""}`
         : `${index + 1}번`;
       const body = slotRows.length
         ? slotRows
-            .map(({ invoice, item, itemIndex }) => {
+            .map(({ invoice, item }) => {
               const meta = itemStatusMeta(item);
               const key = itemSlotKey(invoice, item);
-              const itemNo = itemOrderNo(item, itemIndex);
               const classes = [
                 "tray-item",
                 meta.className,
@@ -853,7 +875,7 @@ function renderTray() {
               return `<button class="${classes}" data-tray-key="${escapeHtml(key)}" type="button">
                 <span class="tray-item-check">${isPicked(item) ? "✓" : ""}</span>
                 <span class="tray-item-main">
-                  <span class="tray-item-seq">${escapeHtml(invoiceSequenceWithGroupLabel(invoice))} · 상품 ${itemNo}번</span>
+                  <span class="tray-item-seq">${escapeHtml(invoiceSequenceWithGroupLabel(invoice))}</span>
                   <strong>${escapeHtml(item.ownCode || "-")}</strong>
                   <small>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</small>
                 </span>
@@ -993,7 +1015,7 @@ function shortageRowsForCurrentFilter() {
       (a, b) =>
         String(a.item.ownCode || "").localeCompare(String(b.item.ownCode || ""), "ko") ||
         String(a.item.optionName || "").localeCompare(String(b.item.optionName || ""), "ko") ||
-        invoiceSequenceNo(a.invoice) - invoiceSequenceNo(b.invoice),
+        visibleInvoiceSequenceNo(a.invoice) - visibleInvoiceSequenceNo(b.invoice),
     );
   }
   return openRows;
