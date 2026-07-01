@@ -46,6 +46,15 @@ const state = {
   workflowEventsReady: false,
   workflowEventsChecked: false,
   saving: new Set(),
+  drawerKeypad: {
+    orderGroupNo: "",
+    value: "",
+  },
+  orderListModal: {
+    open: false,
+    filter: "all",
+    search: "",
+  },
 };
 
 const els = {
@@ -821,6 +830,155 @@ function renderDashboard() {
     </div>`;
 }
 
+function orderListModalRows() {
+  const search = state.orderListModal.search.trim().toLowerCase();
+  const filter = state.orderListModal.filter;
+  return sortedAllInvoices().flatMap((invoice, invoiceIndex) => {
+    const invoiceItemCount = (invoice.items || []).length;
+    const invoiceQty = (invoice.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+    return (invoice.items || []).flatMap((item) => {
+      const done = isPicked(item);
+      const shortage = shortageQty(item);
+      if (filter === "unpick" && done) return [];
+      if (filter === "done" && !done) return [];
+      if (filter === "short" && shortage <= 0) return [];
+      const haystack = [
+        invoiceSequenceWithGroupLabel(invoice, invoiceIndex),
+        invoice.invoiceNo,
+        invoice.orderGroupNo,
+        invoice.displayName,
+        invoice.csDisplayName,
+        invoice.recipientName,
+        invoice.buyerName,
+        item.ownCode,
+        item.sellpiaProductCode,
+        item.productName,
+        item.optionName,
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (search && !haystack.includes(search)) return [];
+      return [
+        {
+          invoice,
+          item,
+          invoiceIndex,
+          done,
+          shortage,
+          invoiceItemCount,
+          invoiceQty,
+        },
+      ];
+    });
+  });
+}
+
+function ensureOrderListModal() {
+  let modal = document.getElementById("order-list-modal");
+  if (modal) return modal;
+  modal = document.createElement("div");
+  modal.id = "order-list-modal";
+  modal.className = "order-list-modal-overlay";
+  modal.hidden = true;
+  modal.innerHTML = `<div class="order-list-modal" role="dialog" aria-modal="true" aria-label="주문리스트">
+    <div class="order-list-modal-head">
+      <h3>주문리스트</h3>
+      <div class="order-list-modal-tools">
+        <input id="order-list-modal-search" type="search" placeholder="주문자/수취인/자사코드/송장/출력">
+        <button type="button" class="order-list-modal-close" data-order-list-action="close">×</button>
+      </div>
+    </div>
+    <div class="order-list-modal-filters" id="order-list-modal-filters">
+      <button type="button" data-order-list-filter="all">전체</button>
+      <button type="button" data-order-list-filter="unpick">미피킹</button>
+      <button type="button" data-order-list-filter="done">피킹완료</button>
+      <button type="button" data-order-list-filter="short">미송있음</button>
+    </div>
+    <div class="order-list-modal-table-wrap">
+      <table class="order-list-modal-table">
+        <thead>
+          <tr>
+            <th>출력</th>
+            <th>주문자</th>
+            <th>자사코드</th>
+            <th>상품명</th>
+            <th>수량</th>
+            <th>서랍</th>
+            <th>부족</th>
+            <th>피킹</th>
+          </tr>
+        </thead>
+        <tbody id="order-list-modal-body"></tbody>
+      </table>
+    </div>
+    <div class="order-list-modal-foot" id="order-list-modal-foot">0건</div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener("click", (event) => {
+    if (event.target.id === "order-list-modal" || event.target.closest("[data-order-list-action='close']")) {
+      closeOrderListModal();
+      return;
+    }
+    const filterButton = event.target.closest("[data-order-list-filter]");
+    if (!filterButton) return;
+    state.orderListModal.filter = filterButton.dataset.orderListFilter || "all";
+    renderOrderListModal();
+  });
+  modal.querySelector("#order-list-modal-search")?.addEventListener("input", (event) => {
+    state.orderListModal.search = event.target.value;
+    renderOrderListModal();
+  });
+  return modal;
+}
+
+function renderOrderListModal() {
+  const modal = ensureOrderListModal();
+  modal.hidden = !state.orderListModal.open;
+  if (!state.orderListModal.open) return;
+  const searchInput = modal.querySelector("#order-list-modal-search");
+  if (searchInput && searchInput.value !== state.orderListModal.search) searchInput.value = state.orderListModal.search;
+  modal.querySelectorAll("[data-order-list-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.orderListFilter === state.orderListModal.filter);
+  });
+  const body = modal.querySelector("#order-list-modal-body");
+  const foot = modal.querySelector("#order-list-modal-foot");
+  const rows = orderListModalRows();
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="8" class="order-list-modal-empty">데이터 없음</td></tr>';
+    if (foot) foot.textContent = "0건";
+    return;
+  }
+  body.innerHTML = rows
+    .map(({ invoice, item, invoiceIndex, done, shortage, invoiceItemCount, invoiceQty }) => {
+      const rowClass = done ? "done" : shortage > 0 ? "shortage" : "";
+      const name = itemName(item);
+      const option = itemOption(item);
+      return `<tr class="${rowClass}">
+        <td><strong>${escapeHtml(invoiceSequenceWithGroupLabel(invoice, invoiceIndex))}</strong><small>${escapeHtml(invoice.invoiceNo || "-")}</small></td>
+        <td>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}<div class="order-list-modal-badges"><span>${invoiceItemCount}종</span><span>${invoiceQty}개</span>${invoiceHasGold(invoice) ? "<span>골드</span>" : ""}</div></td>
+        <td class="code">${escapeHtml(item.ownCode || item.sellpiaProductCode || "-")}</td>
+        <td class="name">${escapeHtml(option ? `${name} / ${option}` : name)}</td>
+        <td class="center">${Number(item.quantity) || 1}</td>
+        <td class="center accent">${escapeHtml(invoice.sellpiaMemo1 || "-")}</td>
+        <td class="center ${shortage > 0 ? "danger" : ""}">${shortage || "-"}</td>
+        <td class="center">${done ? "✓" : "-"}</td>
+      </tr>`;
+    })
+    .join("");
+  if (foot) foot.textContent = `${rows.length}건`;
+}
+
+function openOrderListModal() {
+  state.orderListModal.open = true;
+  renderOrderListModal();
+  document.getElementById("order-list-modal-search")?.focus();
+}
+
+function closeOrderListModal() {
+  state.orderListModal.open = false;
+  renderOrderListModal();
+}
+
 function renderTray() {
   if (!els.trayBoard) return;
   const invoices = currentTrayInvoices();
@@ -1462,7 +1620,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
         </div>
         <div class="drawer-box">
           <label>서랍</label>
-          <input class="drawer-input" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(drawerValue)}" placeholder="서랍번호">
+          <input class="drawer-input" inputmode="numeric" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(drawerValue)}" placeholder="서랍번호">
         </div>
       </div>
     </div>
@@ -2056,6 +2214,104 @@ function onDrawerChange(event) {
     .catch((error) => toast(`서랍번호 저장 실패: ${error.message}`));
 }
 
+function drawerDigitsOnly(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 8);
+}
+
+function ensureDrawerKeypad() {
+  let overlay = document.getElementById("drawer-keypad-overlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "drawer-keypad-overlay";
+  overlay.className = "drawer-keypad-overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `<div class="drawer-keypad" role="dialog" aria-modal="true" aria-label="서랍번호 입력">
+    <div class="drawer-keypad-display">
+      <strong id="drawer-keypad-value">-</strong>
+      <span>서랍번호</span>
+    </div>
+    <div class="drawer-keypad-grid">
+      ${["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => `<button type="button" data-keypad-digit="${digit}">${digit}</button>`).join("")}
+      <button type="button" data-keypad-action="clear">지움</button>
+      <button type="button" data-keypad-digit="0">0</button>
+      <button type="button" data-keypad-action="delete">⌫</button>
+    </div>
+    <div class="drawer-keypad-actions">
+      <button type="button" data-keypad-action="close">닫기</button>
+      <button type="button" class="primary" data-keypad-action="done">확인</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (event) => onDrawerKeypadClick(event).catch(showError));
+  return overlay;
+}
+
+function renderDrawerKeypad() {
+  const display = document.getElementById("drawer-keypad-value");
+  if (display) display.textContent = state.drawerKeypad.value || "-";
+}
+
+function openDrawerKeypad(input) {
+  if (!input) return;
+  state.drawerKeypad.orderGroupNo = input.dataset.orderGroup || "";
+  state.drawerKeypad.value = drawerDigitsOnly(input.value);
+  const overlay = ensureDrawerKeypad();
+  overlay.hidden = false;
+  renderDrawerKeypad();
+}
+
+function closeDrawerKeypad() {
+  const overlay = document.getElementById("drawer-keypad-overlay");
+  if (overlay) overlay.hidden = true;
+  state.drawerKeypad.orderGroupNo = "";
+  state.drawerKeypad.value = "";
+}
+
+async function commitDrawerKeypad() {
+  if (!allowWrites) {
+    toast("읽기전용입니다. 서랍번호 저장은 ?write=1에서 가능합니다.");
+    closeDrawerKeypad();
+    return;
+  }
+  const invoice = (state.viewModel?.invoices || []).find((row) => row.orderGroupNo === state.drawerKeypad.orderGroupNo);
+  if (!invoice) {
+    toast("서랍번호 저장 대상을 찾지 못했습니다.");
+    closeDrawerKeypad();
+    return;
+  }
+  const value = state.drawerKeypad.value.trim();
+  await saveDrawerForInvoice(invoice, value);
+  invoice.sellpiaMemo1 = value;
+  closeDrawerKeypad();
+  render();
+  toast("서랍번호 저장");
+}
+
+async function onDrawerKeypadClick(event) {
+  if (event.target.id === "drawer-keypad-overlay") {
+    closeDrawerKeypad();
+    return;
+  }
+  const digit = event.target.closest("[data-keypad-digit]")?.dataset.keypadDigit;
+  if (digit !== undefined) {
+    state.drawerKeypad.value = drawerDigitsOnly(`${state.drawerKeypad.value}${digit}`);
+    renderDrawerKeypad();
+    return;
+  }
+  const action = event.target.closest("[data-keypad-action]")?.dataset.keypadAction;
+  if (action === "clear") state.drawerKeypad.value = "";
+  if (action === "delete") state.drawerKeypad.value = state.drawerKeypad.value.slice(0, -1);
+  if (action === "close") closeDrawerKeypad();
+  if (action === "done") await commitDrawerKeypad();
+  renderDrawerKeypad();
+}
+
+function onDrawerKeypadOpen(event) {
+  const input = event.target.closest(".drawer-input[data-action='drawer']");
+  if (!input) return;
+  openDrawerKeypad(input);
+}
+
 async function bulkToggleGroup(groupIndex) {
   if (!allowWrites) {
     toast("읽기전용입니다. 조 일괄 체크는 ?write=1에서 가능합니다.");
@@ -2459,6 +2715,9 @@ function bindEvents() {
     if (button.dataset.dashboardAction === "toggle-csv") {
       exportToggleCsv();
     }
+    if (button.dataset.dashboardAction === "order-list") {
+      openOrderListModal();
+    }
   });
   els.groupList.addEventListener("click", (event) => {
     const bulkButton = event.target.closest("[data-bulk-group]");
@@ -2485,6 +2744,8 @@ function bindEvents() {
     if (event.key === "Enter") jumpToInvoiceNo(els.jumpInvoiceInput.value);
   });
   els.orderList.addEventListener("click", (event) => onOrderListClick(event).catch(showError));
+  els.orderList.addEventListener("click", onDrawerKeypadOpen);
+  els.orderList.addEventListener("focusin", onDrawerKeypadOpen);
   els.orderList.addEventListener("click", (event) => {
     if (event.target.closest("[data-action]")) return;
     const card = event.target.closest("[data-slot-key]");
@@ -2492,6 +2753,9 @@ function bindEvents() {
     selectPickingCard(card.dataset.slotKey);
   });
   els.orderList.addEventListener("change", onDrawerChange);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.orderListModal.open) closeOrderListModal();
+  });
   els.shortageFilterBar?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-shortage-filter]");
     if (!button) return;
