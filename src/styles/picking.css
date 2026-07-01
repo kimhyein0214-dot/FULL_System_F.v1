@@ -859,6 +859,17 @@ input {
   font-weight: 1000;
 }
 
+.workflow-row-order {
+  width: fit-content;
+  border: 1px solid #bfdbfe;
+  border-radius: 5px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: 1000;
+}
+
 .workflow-row-main small {
   min-width: 0;
   overflow: hidden;
@@ -1212,9 +1223,9 @@ input {
   display: grid;
   grid-template-columns: repeat(4, 42px);
   justify-content: center;
-  align-items: center;
+  align-items: end;
   gap: 5px;
-  padding: 6px;
+  padding: 18px 6px 6px;
 }
 
 .invoice-slot {
@@ -1232,7 +1243,7 @@ input {
 
 .invoice-slot span {
   position: absolute;
-  top: 2px;
+  top: -16px;
   left: 0;
   right: 0;
   color: #64748b;
@@ -1928,7 +1939,7 @@ input {
     height: 60px;
     grid-template-columns: repeat(4, 36px);
     gap: 4px;
-    padding: 5px;
+    padding: 17px 5px 5px;
   }
 
   .invoice-slot {

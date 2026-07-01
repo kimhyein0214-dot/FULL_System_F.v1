@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-workflow-read3";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-workflow-ui1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -351,13 +351,13 @@ function itemSlotKey(invoice, item) {
   return `${invoice.orderGroupNo}::${item.sellpiaItemNo}`;
 }
 
-function itemOrderNo(itemIndex = 0) {
-  return itemIndex + 1;
+function itemOrderNo(item, fallbackIndex = 0) {
+  return Number(item?.itemOrderIndex || 0) || fallbackIndex + 1;
 }
 
 function renderInvoiceSlots(invoiceIndex, item, itemIndex) {
   const activeSlot = (invoiceIndex % JO_SIZE) + 1;
-  const orderNo = itemOrderNo(itemIndex);
+  const orderNo = itemOrderNo(item, itemIndex);
   return `<div class="invoice-slots" aria-label="조 배치 슬롯">
     ${Array.from({ length: JO_SIZE }, (_, index) => {
       const slotNo = index + 1;
@@ -719,12 +719,14 @@ function renderShortagePanels() {
   }
 
   els.shortageListBody.innerHTML = rows
-    .map(({ invoice, item, state: itemState }) => {
+    .map(({ invoice, item, state: itemState }, index) => {
       const key = workflowItemKey(invoice, item);
+      const orderNo = itemOrderNo(item, index);
       return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
         <span class="workflow-row-code">${escapeHtml(item.ownCode || "-")}</span>
         <span class="workflow-row-main">
           <strong>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</strong>
+          <span class="workflow-row-order">상품순서 ${orderNo}번</span>
           <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · ${escapeHtml(invoice.invoiceNo || "송장없음")}</small>
         </span>
         <span class="workflow-row-badge danger">미송 ${Number(itemState?.shortageQty || 0) || 1}</span>
@@ -749,6 +751,7 @@ function renderShortagePanels() {
         <h3>${escapeHtml(cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-")}</h3>
         <p>${escapeHtml(selected.item.productName || "")}</p>
         <dl>
+          <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, 0)}번</dd></div>
           <div><dt>송장번호</dt><dd>${escapeHtml(selected.invoice.invoiceNo || "-")}</dd></div>
           <div><dt>부족수량</dt><dd>${Number(selectedState?.shortageQty || 0) || 1}개</dd></div>
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>

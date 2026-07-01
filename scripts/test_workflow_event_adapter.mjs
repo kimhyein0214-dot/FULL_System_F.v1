@@ -101,6 +101,16 @@ assert.equal(memo1Only.shortageItems.length, 2);
 assert.equal(memo1Only.shortageItems[0].state.drawerMemo, "S47");
 assert.equal(memo1Only.shortageItems[0].state.shortageQty, 1);
 
+const itemMemo1Only = buildWorkflowQueues({
+  orders,
+  orderItems: [{ ...orderItems[0], o_shop_memo: "S12" }, orderItems[1]],
+  itemEvents: [],
+  invoiceEvents: [],
+});
+
+assert.equal(itemMemo1Only.shortageItems.length, 1);
+assert.equal(itemMemo1Only.shortageItems[0].state.drawerMemo, "S12");
+
 const memo2Shortage = buildWorkflowQueues({
   orders,
   orderItems: [{ ...orderItems[0], o_shop_memo2: "2" }, orderItems[1]],

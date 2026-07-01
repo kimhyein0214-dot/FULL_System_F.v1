@@ -161,7 +161,7 @@ export function buildSyntheticMemoEvents({ orders = [], orderItems = [] } = {}) 
     if (!groupNo || !sellpiaItemNo) continue;
 
     const order = ordersByGroup.get(groupNo) || {};
-    const memo1 = invoiceMemo1(order);
+    const memo1 = invoiceMemo1(order) || invoiceMemo1(item);
     const memo2 = itemMemo2(item);
     if (!memo1 && !memo2) continue;
 
