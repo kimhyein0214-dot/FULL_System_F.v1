@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-actions1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-events-default1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -9,7 +9,7 @@ const JO_SIZE = 4;
 
 const params = new URLSearchParams(location.search);
 const allowWrites = params.get("write") === "1";
-const allowWorkflowEvents = allowWrites && params.get("events") === "1";
+const allowWorkflowEvents = params.get("events") !== "0";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const state = {
