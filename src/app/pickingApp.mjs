@@ -366,11 +366,22 @@ function itemStatusMeta(item) {
   return { label: "대기", className: "todo" };
 }
 
-function sellerTone(seller) {
-  const text = String(seller || "");
-  let hash = 0;
-  for (const char of text) hash = (hash + char.charCodeAt(0)) % 5;
-  return `seller-tone-${hash + 1}`;
+function sellerBadgeMeta(seller) {
+  const text = String(seller || "").trim().toLowerCase();
+  if (!text) return null;
+  if (text.includes("스마트") || text.includes("smart") || text.includes("naver") || text.includes("네이버")) {
+    return { label: "스마트스토어", className: "seller-smartstore" };
+  }
+  if (text.includes("지그재그") || text.includes("zigzag") || text.includes("zig")) {
+    return { label: "지그재그", className: "seller-zigzag" };
+  }
+  if (text.includes("에이블리") || text.includes("ably") || text.includes("a-bly")) {
+    return { label: "에이블리", className: "seller-ably" };
+  }
+  if (text.includes("쿠팡") || text.includes("coupang")) {
+    return { label: "쿠팡", className: "seller-coupang" };
+  }
+  return { label: "메이크샵", className: "seller-makeshop" };
 }
 
 function invoiceMatchesFilter(invoice, filterMode) {
@@ -420,25 +431,35 @@ function renderDashboard() {
   const goldInvoices = invoices.filter(invoiceHasGold).length;
   const goldItems = items.filter(isGoldItem).length;
 
-  const rows = [
-    ["전체 송장", `${invoices.length}건`],
-    ["전체 상품", `${items.length}개`],
-    ["피킹완료", `${picked}개`],
-    ["부족항목", `${shortage}개`],
-    ["보류", `${hold}개`],
-    ["서랍없음", `${noDrawer}건`],
-    ["골드 송장", `${goldInvoices}건`],
-    ["골드 상품", `${goldItems}개`],
+  const percent = (value, total) => (total ? Math.min(100, Math.round((value / total) * 100)) : 0);
+  const chartRows = [
+    { label: "피킹완료", value: picked, total: items.length, unit: "개", tone: "good" },
+    { label: "미송", value: shortage, total: items.length, unit: "개", tone: "danger" },
+    { label: "보류", value: hold, total: items.length, unit: "개", tone: "warn" },
+    { label: "서랍없음", value: noDrawer, total: invoices.length, unit: "건", tone: "muted" },
+    { label: "골드송장", value: goldInvoices, total: invoices.length, unit: "건", tone: "gold" },
+    { label: "골드상품", value: goldItems, total: items.length, unit: "개", tone: "gold" },
   ];
 
-  els.dashboardSummary.innerHTML = rows
-    .map(
-      ([label, value]) => `<div class="dashboard-stat">
-        <span>${escapeHtml(label)}</span>
-        <strong>${escapeHtml(value)}</strong>
-      </div>`,
-    )
-    .join("");
+  els.dashboardSummary.innerHTML = `<div class="dashboard-overview">
+      <div><span>송장</span><strong>${invoices.length}</strong><em>건</em></div>
+      <div><span>상품</span><strong>${items.length}</strong><em>개</em></div>
+      <div><span>완료율</span><strong>${percent(picked, items.length)}</strong><em>%</em></div>
+    </div>
+    <div class="dashboard-chart">
+      ${chartRows
+        .map((row) => {
+          const pct = percent(row.value, row.total);
+          return `<div class="dashboard-chart-row ${row.tone}">
+            <div class="chart-head">
+              <span>${escapeHtml(row.label)}</span>
+              <strong>${row.value}${escapeHtml(row.unit)} / ${row.total}${escapeHtml(row.unit)}</strong>
+            </div>
+            <div class="chart-track"><div class="chart-fill" style="width:${pct}%"></div></div>
+          </div>`;
+        })
+        .join("")}
+    </div>`;
 }
 
 function renderTray() {
@@ -607,6 +628,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
     .filter(Boolean)
     .join(" ");
   const drawerValue = invoiceDrawerValue(invoice);
+  const seller = sellerBadgeMeta(invoice.seller);
 
   return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" data-slot-key="${escapeHtml(slotKey)}">
     <div class="thumb-wrap">
@@ -625,7 +647,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
         <div class="invoice-meta">
           <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
           <span>${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
-          ${invoice.seller ? `<span class="seller-badge ${sellerTone(invoice.seller)}">${escapeHtml(invoice.seller)}</span>` : ""}
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
       </div>
       <div class="picking-controls">

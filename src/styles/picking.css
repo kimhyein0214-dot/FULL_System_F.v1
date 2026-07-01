@@ -505,11 +505,12 @@ input {
 
 .dashboard-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
-  gap: 8px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 10px;
 }
 
-.dashboard-stat,
+.dashboard-overview,
+.dashboard-chart,
 .dashboard-card {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -517,22 +518,97 @@ input {
   box-shadow: var(--shadow);
 }
 
-.dashboard-stat {
-  min-height: 72px;
-  padding: 12px;
+.dashboard-overview {
+  padding: 10px;
   display: grid;
-  gap: 6px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
 }
 
-.dashboard-stat span {
+.dashboard-overview div {
+  min-height: 64px;
+  border: 1px solid #dbe4f0;
+  border-radius: 7px;
+  background: #f8fafc;
+  display: grid;
+  place-items: center;
+  align-content: center;
+}
+
+.dashboard-overview span,
+.chart-head span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
 }
 
-.dashboard-stat strong {
+.dashboard-overview strong {
   font-size: 22px;
   font-weight: 1000;
+  line-height: 1;
+}
+
+.dashboard-overview em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.dashboard-chart {
+  padding: 10px;
+  display: grid;
+  gap: 9px;
+}
+
+.dashboard-chart-row {
+  display: grid;
+  gap: 5px;
+}
+
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chart-head strong {
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.chart-track {
+  height: 12px;
+  border-radius: 999px;
+  background: #e5eaf2;
+  overflow: hidden;
+}
+
+.chart-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+
+.dashboard-chart-row.good .chart-fill {
+  background: var(--green);
+}
+
+.dashboard-chart-row.danger .chart-fill {
+  background: var(--red);
+}
+
+.dashboard-chart-row.warn .chart-fill {
+  background: var(--amber);
+}
+
+.dashboard-chart-row.muted .chart-fill {
+  background: #64748b;
+}
+
+.dashboard-chart-row.gold .chart-fill {
+  background: #d39a21;
 }
 
 .dashboard-card {
@@ -758,7 +834,7 @@ input {
 }
 
 .qty-tile {
-  width: 96px;
+  width: 66px;
   height: 66px;
   border: 2px solid #b9c8ff;
   border-radius: 7px;
@@ -773,15 +849,15 @@ input {
 }
 
 .invoice-slots {
-  width: 230px;
+  width: 66px;
   height: 66px;
   border: 1px solid #d3dce8;
   border-radius: 7px;
   background: #f8fafc;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
-  padding: 16px 7px 7px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  padding: 4px;
 }
 
 .invoice-slot {
@@ -797,18 +873,18 @@ input {
 
 .invoice-slot span {
   position: absolute;
-  top: -18px;
+  top: 2px;
   left: 0;
   right: 0;
   color: #64748b;
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 1000;
   text-align: center;
 }
 
 .invoice-slot strong {
   color: #17804a;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 1000;
   line-height: 1;
 }
@@ -931,38 +1007,43 @@ input {
 
 .seller-badge {
   border: 1px solid #b7e0c5;
+  border-radius: 6px;
   background: #ecfdf3;
   color: #21794c;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
-.seller-tone-1 {
+.seller-smartstore {
   border-color: #b7e0c5;
   background: #ecfdf3;
   color: #21794c;
 }
 
-.seller-tone-2 {
-  border-color: #c4d3ff;
-  background: #eff4ff;
-  color: #1f55c5;
+.seller-zigzag {
+  border-color: #f2b8da;
+  background: #fff0f8;
+  color: #c02675;
 }
 
-.seller-tone-3 {
-  border-color: #e7c67b;
-  background: #fff8df;
-  color: #8a5b12;
+.seller-ably {
+  border-color: #d1d5db;
+  background: #f3f4f6;
+  color: #4b5563;
 }
 
-.seller-tone-4 {
-  border-color: #d6c5ff;
-  background: #f2e9ff;
-  color: #6d3ac7;
-}
-
-.seller-tone-5 {
+.seller-coupang {
   border-color: #f3b5b5;
   background: #fff1f1;
   color: #c43434;
+}
+
+.seller-makeshop {
+  border-color: #c4d3ff;
+  background: #eff4ff;
+  color: #1f55c5;
 }
 
 .total-badge {
@@ -1113,7 +1194,7 @@ input {
 
 .picking-controls {
   display: grid;
-  grid-template-columns: 96px 230px 144px 124px;
+  grid-template-columns: 66px 66px 144px 124px;
   gap: 10px;
   align-items: center;
   min-width: 0;
@@ -1474,22 +1555,22 @@ input {
   }
 
   .picking-controls {
-    grid-template-columns: 84px 204px 128px 112px;
+    grid-template-columns: 60px 60px 128px 112px;
   }
 
   .qty-tile {
-    width: 84px;
-    height: 58px;
+    width: 60px;
+    height: 60px;
     font-size: 24px;
   }
 
   .invoice-slots {
-    width: 204px;
-    height: 58px;
+    width: 60px;
+    height: 60px;
   }
 
   .dashboard-summary {
-    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .tray-board {
