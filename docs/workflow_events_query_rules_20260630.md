@@ -20,10 +20,26 @@ show by reading workflow events.
 | Screen | Source rows | Event filter | Result |
 | --- | --- | --- | --- |
 | Picking | `orders` + `order_items` for `receiptDate` | picked/shortage/hold states | Current receipt-date picking list |
-| Shortage picking | original `orders` + `order_items` | item has `shortage_created` and no later `shortage_repick_completed`/`inspection_completed`/`cancelled` | All open shortage items |
-| Inspection | original full invoice | invoice has any item with `shortage_repick_completed` and no later inspection completion | Full invoice, not just shortage items |
+| Shortage picking | original `orders` + `order_items` | item has `shortage_created` and no later `shortage_repick_completed`/`inspection_completed`/`cancelled`; do not filter by selected date | All open shortage items |
+| Inspection | original full invoice | invoice has any item with `shortage_repick_completed` and no later inspection completion; do not filter by selected date | Full invoice, not just shortage items |
 | CS | original invoice | invoice has `hold_created` or `cs_pending` and no resolving event | CS work list |
 | Memo updater | `sellpia_sync_queue` | `status = queued` | Deterministic Sellpia updates |
+
+## Date Rule
+
+`receiptDate` / `ord_date` is the daily picking filter only. Shortage picking
+and inspection are open-work queues, so they must be keyed by
+`order_group_no`, `invoice_no`, and `sellpia_item_no`, then reduced by workflow
+events.
+
+This prevents the common cross-day failure:
+
+1. shortage was created from a 2026-06-29 receipt-date order,
+2. shortage picking was completed on 2026-07-01,
+3. inspection is performed on 2026-07-02.
+
+The invoice remains visible in inspection until an inspection completion event
+is written, regardless of the currently selected UI date.
 
 ## Barcode Flow
 

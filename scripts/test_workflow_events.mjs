@@ -59,4 +59,48 @@ assert.deepEqual(
   ["G2"],
 );
 
+const crossDayEvents = [
+  {
+    id: 1,
+    receipt_date: "2026-06-29",
+    order_group_no: "G1",
+    sellpia_item_no: "I1",
+    event_type: ITEM_EVENT.SHORTAGE_CREATED,
+    quantity: 1,
+    event_at: "2026-06-29T01:00:00Z",
+  },
+  {
+    id: 2,
+    receipt_date: "2026-06-29",
+    order_group_no: "G1",
+    sellpia_item_no: "I1",
+    event_type: ITEM_EVENT.SHORTAGE_REPICK_COMPLETED,
+    event_at: "2026-07-01T01:00:00Z",
+  },
+];
+
+const crossDayState = buildWorkflowState({ itemEvents: crossDayEvents });
+
+assert.deepEqual(
+  repickedInvoicesForInspection(viewModel, crossDayState).map((row) => row.orderGroupNo),
+  ["G1"],
+);
+assert.equal(repickedInvoicesForInspection(viewModel, crossDayState)[0].items.length, 2);
+
+const crossDayInspectedState = buildWorkflowState({
+  itemEvents: [
+    ...crossDayEvents,
+    {
+      id: 3,
+      receipt_date: "2026-06-29",
+      order_group_no: "G1",
+      sellpia_item_no: "I1",
+      event_type: ITEM_EVENT.INSPECTION_COMPLETED,
+      event_at: "2026-07-02T01:00:00Z",
+    },
+  ],
+});
+
+assert.equal(repickedInvoicesForInspection(viewModel, crossDayInspectedState).length, 0);
+
 console.log("workflow event tests passed");

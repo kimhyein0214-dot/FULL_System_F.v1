@@ -42,6 +42,7 @@ the old production frontend.
 - `docs/sellpia_db_column_mapping.md`
 - `docs/sellpia_collection_contract_20260630.md`
 - `docs/shortage_completion_model_20260630.md`
+- `docs/shortage_inspection_date_independent_flow_20260701.md`
 - `docs/stabilization_save_path_inventory.md`
 - `docs/staging_write_test_checklist.md`
 - `docs/legacy_file_inventory_20260630.md`
