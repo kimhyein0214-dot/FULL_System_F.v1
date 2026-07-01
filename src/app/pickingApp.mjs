@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-completed-tab1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-dashboard-inspection1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -38,6 +38,8 @@ const state = {
   selectedInspectionGroup: "",
   selectedCompletedGroup: "",
   completedDateMode: "receipt",
+  inspectionFilter: "all",
+  inspectionSearchText: "",
   workflowEventsReady: false,
   workflowEventsChecked: false,
   saving: new Set(),
@@ -50,6 +52,8 @@ const els = {
   sortToggle: document.getElementById("sort-toggle"),
   searchInput: document.getElementById("search-input"),
   filterBar: document.getElementById("filter-bar"),
+  inspectionFilterBar: document.getElementById("inspection-filter-bar"),
+  inspectionSearchInput: document.getElementById("inspection-search-input"),
   groupList: document.getElementById("group-list"),
   jumpGroupInput: document.getElementById("jump-group-input"),
   jumpGroupBtn: document.getElementById("jump-group-btn"),
@@ -466,6 +470,42 @@ function completedInvoicesForSelectedDate() {
     });
 }
 
+function invoiceTextForSearch(invoice) {
+  return [
+    invoice.invoiceNo,
+    invoice.orderGroupNo,
+    invoice.displayName,
+    invoice.csDisplayName,
+    invoice.recipientName,
+    invoice.buyerName,
+    invoice.seller,
+    ...(invoice.items || []).flatMap((item) => [item.ownCode, item.sellpiaProductCode, item.productName, item.optionName]),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function invoiceHasRepickedShortage(invoice) {
+  return (invoice.items || []).some((item) => {
+    const itemState = workflowItemState(invoice, item);
+    return itemState?.shortageRepicked && !itemState?.inspected && !itemState?.cancelled;
+  });
+}
+
+function invoiceMatchesInspectionFilter(invoice) {
+  const invoiceState = workflowInvoiceState(invoice);
+  if (state.inspectionFilter === "gold") return invoiceHasGold(invoice);
+  if (state.inspectionFilter === "hold") return Boolean(invoiceState?.hold);
+  if (state.inspectionFilter === "shortage") return invoiceHasRepickedShortage(invoice);
+  return true;
+}
+
+function invoiceMatchesInspectionSearch(invoice) {
+  const search = state.inspectionSearchText.trim().toLowerCase();
+  if (!search) return true;
+  return invoiceTextForSearch(invoice).includes(search);
+}
+
 function workflowSummary() {
   const queues = state.workflowQueues;
   if (!queues) {
@@ -557,6 +597,9 @@ function renderDashboard() {
     { label: "골드상품", value: goldItems, total: items.length, unit: "개", tone: "gold" },
   ];
   const workflow = workflowSummary();
+  const completedRows = state.workflowQueues?.inspectionCompletedInvoices || [];
+  const completedByReceiptDate = completedRows.filter((invoice) => String(invoice.receiptDate || "").slice(0, 10) === state.selectedDate).length;
+  const completedByDoneDate = completedRows.filter((invoice) => completedDateForInvoice(invoice) === state.selectedDate).length;
 
   els.dashboardSummary.innerHTML = `<div class="dashboard-overview">
       <div><span>송장</span><strong>${invoices.length}</strong><em>건</em></div>
@@ -594,6 +637,20 @@ function renderDashboard() {
             </div>
             <p>미송피킹/검품은 선택 날짜가 아니라 workflow event 상태 기준으로 집계됩니다.</p>`
       }
+    </div>
+    <div class="dashboard-card dashboard-workflow-card">
+      <h3>검품/완료 확인</h3>
+      <div class="dashboard-workflow-status">
+        <div><span>선택 접수일 완료</span><strong>${completedByReceiptDate}</strong><em>건</em></div>
+        <div><span>선택 완료일 완료</span><strong>${completedByDoneDate}</strong><em>건</em></div>
+        <div><span>검품 대기</span><strong>${workflow.inspectionInvoices}</strong><em>건</em></div>
+        <div><span>미송피킹 대기</span><strong>${workflow.shortageItems}</strong><em>상품</em></div>
+      </div>
+      <div class="dashboard-actions">
+        <button class="btn" data-dashboard-tab="shortage" type="button">미송피킹 보기</button>
+        <button class="btn" data-dashboard-tab="inspection" type="button">검품대기 보기</button>
+        <button class="btn" data-dashboard-tab="completed" type="button">작업완료 보기</button>
+      </div>
     </div>`;
 }
 
@@ -834,8 +891,12 @@ function renderShortagePanels() {
 
 function renderInspectionPanels() {
   const pendingInvoices = state.workflowQueues?.inspectionInvoices || [];
-  const invoices = pendingInvoices;
-  if (els.inspectionListCount) els.inspectionListCount.textContent = `대기 ${invoices.length}건`;
+  const invoices = pendingInvoices.filter(invoiceMatchesInspectionFilter).filter(invoiceMatchesInspectionSearch);
+  if (els.inspectionListCount) els.inspectionListCount.textContent = `대기 ${invoices.length}건 / 전체 ${pendingInvoices.length}건`;
+
+  els.inspectionFilterBar?.querySelectorAll("[data-inspection-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.inspectionFilter === state.inspectionFilter);
+  });
 
   if (state.workflowQueueError) {
     renderWorkflowEmpty(els.inspectionListBody, state.workflowQueueError);
@@ -850,8 +911,9 @@ function renderInspectionPanels() {
   }
 
   if (!invoices.length) {
-    renderWorkflowEmpty(els.inspectionListBody, "현재 검품 대기 송장이 없습니다.");
-    renderWorkflowEmpty(els.inspectionDetail, "검품 대기 송장이 없습니다. 완료된 송장은 작업완료 탭에서 확인하세요.");
+    const emptyText = pendingInvoices.length ? "현재 필터/검색에 맞는 검품 대기 송장이 없습니다." : "현재 검품 대기 송장이 없습니다.";
+    renderWorkflowEmpty(els.inspectionListBody, emptyText);
+    renderWorkflowEmpty(els.inspectionDetail, `${emptyText} 완료된 송장은 작업완료 탭에서 확인하세요.`);
     return;
   }
 
@@ -863,13 +925,23 @@ function renderInspectionPanels() {
     .map((invoice) => {
       const itemStates = (invoice.items || []).map((item) => workflowItemState(invoice, item)).filter(Boolean);
       const repicked = itemStates.filter((row) => row.shortageRepicked && !row.inspected && !row.cancelled).length;
+      const invoiceState = workflowInvoiceState(invoice);
+      const seller = sellerBadgeMeta(invoice.seller);
+      const badges = [
+        seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : "",
+        invoiceHasGold(invoice) ? '<span class="workflow-row-badge gold">골드</span>' : "",
+        invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : "",
+        repicked ? `<span class="workflow-row-badge warn">검품 ${repicked}</span>` : "",
+      ]
+        .filter(Boolean)
+        .join("");
       return `<button class="workflow-row ${invoice.orderGroupNo === state.selectedInspectionGroup ? "selected" : ""}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
         <span class="workflow-row-code">${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
         <span class="workflow-row-main">
           <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
           <small>상품 ${invoice.items.length}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")}</small>
         </span>
-        <span class="workflow-row-badge warn">검품 ${repicked}</span>
+        <span class="workflow-row-badges">${badges}</span>
       </button>`;
     })
     .join("");
@@ -880,12 +952,18 @@ function renderInspectionPanels() {
   const actionDisabled = allowWorkflowEvents ? "" : "disabled";
   const holdAction = invoiceState?.hold ? "inspection-hold-release" : "inspection-hold";
   const holdLabel = invoiceState?.hold ? "보류 해제" : "보류 처리";
+  const selectedRepicked = (selected.items || []).filter((item) => {
+    const itemState = workflowItemState(selected, item);
+    return itemState?.shortageRepicked && !itemState?.inspected && !itemState?.cancelled;
+  }).length;
   els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""}">
       <div>
         <strong>${escapeHtml(selected.invoiceNo || "송장없음")}</strong>
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
       </div>
       <div class="inspection-actions">
+        ${invoiceHasGold(selected) ? '<span class="workflow-row-badge gold">골드</span>' : ""}
+        ${selectedRepicked ? `<span class="workflow-row-badge warn">미송 ${selectedRepicked}</span>` : ""}
         ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
         <button class="btn" data-action="${holdAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${holdLabel}</button>
         <button class="btn primary" data-action="inspection-complete" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>완료 처리</button>
@@ -1648,6 +1726,31 @@ function bindEvents() {
     if (!button) return;
     state.filterMode = button.dataset.filter;
     render();
+  });
+  els.inspectionFilterBar?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-inspection-filter]");
+    if (!button) return;
+    state.inspectionFilter = button.dataset.inspectionFilter || "all";
+    state.selectedInspectionGroup = "";
+    renderInspectionPanels();
+  });
+  els.inspectionSearchInput?.addEventListener("input", () => {
+    state.inspectionSearchText = els.inspectionSearchInput.value;
+    state.selectedInspectionGroup = "";
+    renderInspectionPanels();
+    const digits = onlyDigits(state.inspectionSearchText);
+    if (digits.length >= 13) {
+      const row = (state.workflowQueues?.inspectionInvoices || []).find((invoice) => onlyDigits(invoice.invoiceNo).includes(digits));
+      if (row) {
+        state.selectedInspectionGroup = row.orderGroupNo;
+        renderInspectionPanels();
+      }
+    }
+  });
+  els.dashboardSummary?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-dashboard-tab]");
+    if (!button) return;
+    setActiveTab(button.dataset.dashboardTab);
   });
   els.groupList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-group]");

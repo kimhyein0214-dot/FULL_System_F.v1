@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pretendard/1.3.9/static/pretendard.css">
-    <link rel="stylesheet" href="src/styles/picking.css?v=20260701-completed-tab1">
+    <link rel="stylesheet" href="src/styles/picking.css?v=20260701-dashboard-inspection1">
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -161,11 +161,13 @@
               <p>송장 단위 검품 화면 뼈대입니다.</p>
             </div>
             <div class="panel-tools">
-              <button class="filter-chip active" type="button">전체</button>
-              <button class="filter-chip" type="button">미완료</button>
-              <button class="filter-chip" type="button">골드</button>
-              <button class="filter-chip" type="button">미송</button>
-              <button class="filter-chip" type="button">보류</button>
+              <div id="inspection-filter-bar" class="filter-bar" aria-label="검품 필터">
+                <button class="filter-chip active" data-inspection-filter="all" type="button">전체</button>
+                <button class="filter-chip" data-inspection-filter="shortage" type="button">미송</button>
+                <button class="filter-chip" data-inspection-filter="gold" type="button">골드</button>
+                <button class="filter-chip" data-inspection-filter="hold" type="button">보류</button>
+              </div>
+              <input id="inspection-search-input" class="search" placeholder="송장번호 / 주문자 / 수취인 / 자사코드">
             </div>
           </div>
           <div class="workflow-layout inspection-layout">
@@ -261,6 +263,6 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="src/app/pickingApp.mjs?v=20260701-completed-tab1"></script>
+    <script type="module" src="src/app/pickingApp.mjs?v=20260701-dashboard-inspection1"></script>
   </body>
 </html>

@@ -658,7 +658,7 @@ input {
 
 .workflow-flow-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 8px;
 }
 
@@ -729,6 +729,46 @@ input {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.dashboard-workflow-card {
+  grid-column: 1 / -1;
+}
+
+.dashboard-workflow-status {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.dashboard-workflow-status div {
+  border: 1px solid #dbe4f0;
+  border-radius: 7px;
+  background: #f8fafc;
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+}
+
+.dashboard-workflow-status span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.dashboard-workflow-status strong {
+  color: #111827;
+  font-size: 22px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.dashboard-workflow-status em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .workflow-layout {
@@ -910,6 +950,24 @@ input {
 .workflow-row-badge.hold {
   background: #f5f3ff;
   color: #6d28d9;
+}
+
+.workflow-row-badge.gold {
+  background: #fff7d6;
+  color: #9a6700;
+}
+
+.workflow-row-badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.workflow-row-badges .seller-badge {
+  font-size: 10px;
+  padding: 2px 6px;
 }
 
 .workflow-list-toggle {
