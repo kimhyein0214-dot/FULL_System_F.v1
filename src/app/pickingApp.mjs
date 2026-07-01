@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-layout1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-all1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -541,14 +541,38 @@ function invoiceMatchesInspectionSearch(invoice) {
   return invoiceTextForSearch(invoice).includes(search);
 }
 
+function mergeInvoicesUnique(...lists) {
+  const merged = [];
+  const seen = new Set();
+  for (const list of lists) {
+    for (const invoice of list || []) {
+      const key = invoice.orderGroupNo || invoice.invoiceNo;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(invoice);
+    }
+  }
+  return merged;
+}
+
+function isInspectionPendingInvoice(invoice) {
+  const invoiceState = workflowInvoiceState(invoice);
+  return !invoiceState?.inspected && !invoiceState?.cancelled;
+}
+
+function inspectionSourceInvoices() {
+  return mergeInvoicesUnique(state.viewModel?.invoices || [], state.workflowQueues?.inspectionInvoices || []).filter(isInspectionPendingInvoice);
+}
+
 function workflowSummary() {
   const queues = state.workflowQueues;
+  const inspectionCount = inspectionSourceInvoices().length;
   if (!queues) {
     return {
       ready: false,
       status: state.workflowQueueError ? "오류" : "대기",
       shortageItems: 0,
-      inspectionInvoices: 0,
+      inspectionInvoices: inspectionCount,
       completedInvoices: 0,
       repickedItems: 0,
       missingInvoices: 0,
@@ -565,7 +589,7 @@ function workflowSummary() {
     ready: true,
     status: "ON",
     shortageItems: queues.shortageItems.length,
-    inspectionInvoices: queues.inspectionInvoices.length,
+    inspectionInvoices: inspectionCount,
     completedInvoices: queues.inspectionCompletedInvoices.length,
     repickedItems,
     missingInvoices: Math.max(0, queues.orderGroupNos.length - queues.viewModel.invoices.length),
@@ -925,7 +949,7 @@ function renderShortagePanels() {
 }
 
 function renderInspectionPanels() {
-  const pendingInvoices = state.workflowQueues?.inspectionInvoices || [];
+  const pendingInvoices = inspectionSourceInvoices();
   const invoices = pendingInvoices.filter(invoiceMatchesInspectionFilter).filter(invoiceMatchesInspectionSearch);
   if (els.inspectionListCount) els.inspectionListCount.textContent = `대기 ${invoices.length}건 / 전체 ${pendingInvoices.length}건`;
 
@@ -933,13 +957,13 @@ function renderInspectionPanels() {
     button.classList.toggle("active", button.dataset.inspectionFilter === state.inspectionFilter);
   });
 
-  if (state.workflowQueueError) {
+  if (state.workflowQueueError && !pendingInvoices.length) {
     renderWorkflowEmpty(els.inspectionListBody, state.workflowQueueError);
     renderWorkflowEmpty(els.inspectionDetail, "이벤트 큐를 불러오지 못했습니다.");
     return;
   }
 
-  if (!state.workflowQueues) {
+  if (!state.workflowQueues && !state.viewModel) {
     renderWorkflowEmpty(els.inspectionListBody, "검품 대기 송장을 불러오는 중입니다.");
     renderWorkflowEmpty(els.inspectionDetail, "검품 대기 송장을 선택하면 전체 상품이 표시됩니다.");
     return;
@@ -1395,9 +1419,8 @@ async function saveSelectedShortageMemo(shortageKey = state.selectedShortageKey)
 
 function selectedInspectionInvoice(orderGroupNo = state.selectedInspectionGroup) {
   return (
-    [...(state.workflowQueues?.inspectionInvoices || []), ...(state.workflowQueues?.inspectionCompletedInvoices || [])].find(
-      (invoice) => invoice.orderGroupNo === orderGroupNo,
-    ) || null
+    [...inspectionSourceInvoices(), ...(state.workflowQueues?.inspectionCompletedInvoices || [])].find((invoice) => invoice.orderGroupNo === orderGroupNo) ||
+    null
   );
 }
 
@@ -1711,7 +1734,7 @@ async function toggleSelectedItem() {
 function currentWorkflowRows() {
   if (state.activeTab === "shortage") return state.workflowQueues?.shortageItems || [];
   if (state.activeTab === "inspection") {
-    return (state.workflowQueues?.inspectionInvoices || []).filter(invoiceMatchesInspectionFilter).filter(invoiceMatchesInspectionSearch);
+    return inspectionSourceInvoices().filter(invoiceMatchesInspectionFilter).filter(invoiceMatchesInspectionSearch);
   }
   if (state.activeTab === "completed") return completedInvoicesForSelectedDate();
   return [];
@@ -1850,7 +1873,7 @@ function bindEvents() {
     renderInspectionPanels();
     const digits = onlyDigits(state.inspectionSearchText);
     if (digits.length >= 13) {
-      const row = (state.workflowQueues?.inspectionInvoices || []).find((invoice) => onlyDigits(invoice.invoiceNo).includes(digits));
+      const row = inspectionSourceInvoices().find((invoice) => onlyDigits(invoice.invoiceNo).includes(digits));
       if (row) {
         state.selectedInspectionGroup = row.orderGroupNo;
         renderInspectionPanels();
