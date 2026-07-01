@@ -1841,6 +1841,37 @@ function itemSellerOptionName(item) {
   return firstRawText(item.raw, "seller_option_name", "seller_p_option", "mall_option_name") || item.optionName || "";
 }
 
+function buildPlannedPrintCsvRows() {
+  const headers = ["작업번호", "송장번호", "셀피아순번", "주문자", "수취인", "상품종류수", "총수량", "골드포함", "부족/미송", "배송보류"];
+  const rows = [headers];
+  workOrderedInvoices().forEach((invoice, index) => {
+    const stats = invoiceStats(invoice);
+    rows.push([
+      visibleInvoiceSequenceNo(invoice, index),
+      invoice.invoiceNo || "",
+      invoice.raw?.sellpia_seq_no || invoice.raw?.original_seq_no || invoice.raw?.sort_order || invoice.sortOrder || "",
+      invoice.buyerName || invoice.displayName || "",
+      invoice.recipientName || invoice.csDisplayName || invoice.displayName || "",
+      stats.total,
+      stats.qty,
+      invoiceHasGold(invoice) ? "Y" : "",
+      stats.shortage > 0 ? "Y" : "",
+      stats.hold > 0 || workflowInvoiceState(invoice)?.hold ? "Y" : "",
+    ]);
+  });
+  return rows;
+}
+
+function exportPlannedPrintCsv() {
+  if (!state.viewModel?.invoices?.length) {
+    toast("출력대상 CSV 대상이 없습니다.");
+    return;
+  }
+  const rows = buildPlannedPrintCsvRows();
+  downloadCsv(`planned_print_${timestampForFilename()}.csv`, rows);
+  toast(`출력대상 CSV ${rows.length - 1}건 다운로드`);
+}
+
 function invoiceReceiverTel(invoice) {
   return firstRawText(invoice.raw, "receiver_tel", "recipient_tel", "receiver_phone", "recipient_phone", "tel");
 }
@@ -2714,6 +2745,9 @@ function bindEvents() {
     }
     if (button.dataset.dashboardAction === "toggle-csv") {
       exportToggleCsv();
+    }
+    if (button.dataset.dashboardAction === "planned-print-csv") {
+      exportPlannedPrintCsv();
     }
     if (button.dataset.dashboardAction === "order-list") {
       openOrderListModal();
