@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-completed1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-shortage-reopen1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -427,6 +427,10 @@ function workflowItemState(invoice, item) {
 
 function workflowInvoiceState(invoice) {
   return state.workflowQueues?.workflowState?.invoiceStateByKey?.get(invoice.orderGroupNo) || null;
+}
+
+function workflowEventTime(row) {
+  return new Date(row?.event_at || row?.created_at || 0).getTime() || 0;
 }
 
 function invoiceSequenceNo(invoice, fallbackIndex = 0) {
@@ -1073,6 +1077,10 @@ function renderInspectionPanels() {
           const shortage = Number(itemState?.shortageQty || shortageQty(item) || 0);
           const statusText = selectedCompleted ? "검품완료" : itemRepicked ? "미송피킹 완료" : "전체상품";
           const statusNotes = [itemState?.drawerMemo ? `서랍 ${itemState.drawerMemo}` : "", itemState?.memo ? itemState.memo : ""].filter(Boolean);
+          const reopenButton =
+            itemRepicked && !selectedCompleted
+              ? `<button class="workflow-inline-btn danger" data-action="shortage-repick-reopen" data-order-group="${escapeHtml(selected.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" type="button" ${actionDisabled}>완료취소</button>`
+              : "";
           return `<div class="workflow-item-row ${rowClass}">
             <span class="workflow-seq-cell">${itemSequenceNo(item, index)}</span>
             <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
@@ -1086,6 +1094,7 @@ function renderInspectionPanels() {
             <small class="workflow-status-cell">
               <span>${escapeHtml(statusText)}</span>
               ${statusNotes.length ? `<em>${escapeHtml(statusNotes.join(" / "))}</em>` : ""}
+              ${reopenButton}
             </small>
           </div>`;
         })
@@ -1427,6 +1436,63 @@ async function completeSelectedShortagePicking(shortageKey = state.selectedShort
   state.selectedShortageKey = "";
   await loadWorkflowData();
   toast("미송피킹 완료: 검품탭에 송장 전체가 표시됩니다.");
+}
+
+function findWorkflowInvoiceItem(orderGroupNo, sellpiaItemNo) {
+  const groupNo = String(orderGroupNo || "");
+  const itemNo = String(sellpiaItemNo || "");
+  const invoices = [
+    ...(state.workflowQueues?.viewModel?.invoices || []),
+    ...(state.workflowQueues?.inspectionInvoices || []),
+    ...(state.workflowQueues?.inspectionCompletedInvoices || []),
+  ];
+  for (const invoice of invoices) {
+    if (String(invoice.orderGroupNo || "") !== groupNo) continue;
+    const item = (invoice.items || []).find((entry) => String(entry.sellpiaItemNo || "") === itemNo);
+    if (item) return { invoice, item };
+  }
+  return { invoice: null, item: null };
+}
+
+function previousShortageQuantity(invoice, item) {
+  const key = workflowItemKey(invoice, item);
+  const events = [...(state.workflowQueues?.syntheticEvents?.itemEvents || []), ...(state.workflowQueues?.itemEvents || [])]
+    .filter((event) => `${event.order_group_no}::${event.sellpia_item_no}` === key)
+    .sort((a, b) => workflowEventTime(a) - workflowEventTime(b) || Number(a.id || 0) - Number(b.id || 0));
+
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.event_type !== "shortage_created" && event.event_type !== "shortage_qty_changed") continue;
+    const qty = Number(event.quantity || 0);
+    if (qty > 0) return qty;
+  }
+  return Number(item.shortageState?.shortageQty || item.pickingState?.shortageQty || 1) || 1;
+}
+
+async function reopenShortageRepick(orderGroupNo, sellpiaItemNo) {
+  const { invoice, item } = findWorkflowInvoiceItem(orderGroupNo, sellpiaItemNo);
+  if (!invoice || !item) {
+    toast("미송피킹 완료취소 대상을 찾지 못했습니다.");
+    return;
+  }
+  const itemState = workflowItemState(invoice, item);
+  if (!itemState?.shortageRepicked || itemState?.cancelled) {
+    toast("이미 미송피킹 대기 상태입니다.");
+    return;
+  }
+
+  const ok = await saveWorkflowItemEvent(invoice, item, "shortage_created", {
+    quantity: previousShortageQuantity(invoice, item),
+    memo: itemState?.memo || "shortage repick reopened",
+    drawerMemo: itemState?.drawerMemo || item.pickingState?.drawerMemo || invoice.sellpiaMemo1 || null,
+  });
+  if (!ok) return;
+
+  state.activeTab = "shortage";
+  state.selectedShortageKey = workflowItemKey(invoice, item);
+  state.selectedInspectionGroup = "";
+  await loadWorkflowData();
+  toast("미송피킹 완료를 취소했습니다. 미송피킹 목록으로 돌아갑니다.");
 }
 
 async function saveSelectedShortageMemo(shortageKey = state.selectedShortageKey) {
@@ -1985,6 +2051,9 @@ function bindEvents() {
     }
     if (button.dataset.action === "inspection-hold" || button.dataset.action === "inspection-hold-release") {
       toggleSelectedInspectionHold(button.dataset.inspectionGroup).catch(showError);
+    }
+    if (button.dataset.action === "shortage-repick-reopen") {
+      reopenShortageRepick(button.dataset.orderGroup, button.dataset.itemNo).catch(showError);
     }
   });
   document.querySelectorAll("[data-completed-date-mode]").forEach((button) => {

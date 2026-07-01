@@ -1421,6 +1421,31 @@ input {
   overflow-wrap: anywhere;
 }
 
+.workflow-inline-btn {
+  width: fit-content;
+  justify-self: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 1000;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.workflow-inline-btn.danger {
+  border-color: #fecaca;
+  background: #fff7f7;
+  color: #dc2626;
+}
+
+.workflow-inline-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .workflow-item-row.repicked small {
   background: var(--red-soft);
   color: var(--red);
