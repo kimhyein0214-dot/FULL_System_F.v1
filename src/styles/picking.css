@@ -1466,6 +1466,12 @@ input {
   font-weight: 900;
 }
 
+.workflow-help-text {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .picking-item-card {
   display: grid;
   grid-template-columns: 172px minmax(0, 1fr);

@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-shortage-reopen1";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-shortage-filter1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -35,6 +35,7 @@ const state = {
   workflowQueues: null,
   workflowQueueError: "",
   selectedShortageKey: "",
+  shortageFilter: "all",
   selectedInspectionGroup: "",
   selectedCompletedGroup: "",
   completedDateMode: "receipt",
@@ -70,6 +71,7 @@ const els = {
   shortageListCount: document.getElementById("shortage-list-count"),
   shortageListBody: document.getElementById("shortage-list-body"),
   shortageDetail: document.getElementById("shortage-detail"),
+  shortageFilterBar: document.getElementById("shortage-filter-bar"),
   inspectionListCount: document.getElementById("inspection-list-count"),
   inspectionListBody: document.getElementById("inspection-list-body"),
   inspectionDetail: document.getElementById("inspection-detail"),
@@ -430,7 +432,7 @@ function workflowInvoiceState(invoice) {
 }
 
 function workflowEventTime(row) {
-  return new Date(row?.event_at || row?.created_at || 0).getTime() || 0;
+  return new Date(row?.event_at || row?.created_at || row?.lastEventAt || 0).getTime() || 0;
 }
 
 function invoiceSequenceNo(invoice, fallbackIndex = 0) {
@@ -868,9 +870,68 @@ function renderWorkflowEmpty(target, message) {
   if (target) target.innerHTML = `<div class="workflow-empty">${escapeHtml(message)}</div>`;
 }
 
+function shortageFilterLabel(filter = state.shortageFilter) {
+  return (
+    {
+      all: "전체",
+      code: "자사코드별",
+      drawer: "서랍입력",
+      completed: "피킹완료",
+    }[filter] || "전체"
+  );
+}
+
+function repickedShortageRows() {
+  return (state.workflowQueues?.viewModel?.invoices || []).flatMap((invoice) => {
+    const invoiceState = workflowInvoiceState(invoice);
+    if (invoiceState?.inspected || invoiceState?.cancelled) return [];
+    return (invoice.items || [])
+      .map((item) => ({
+        invoice,
+        item,
+        state: workflowItemState(invoice, item),
+        completed: true,
+      }))
+      .filter((row) => row.state?.shortageRepicked && !row.state?.inspected && !row.state?.cancelled);
+  });
+}
+
+function drawerMemoForShortageRow(row) {
+  return String(row?.state?.drawerMemo || row?.item?.pickingState?.drawerMemo || row?.invoice?.sellpiaMemo1 || "").trim();
+}
+
+function shortageRowsForCurrentFilter() {
+  const openRows = state.workflowQueues?.shortageItems || [];
+  if (state.shortageFilter === "completed") {
+    return repickedShortageRows().sort((a, b) => workflowEventTime(b.state) - workflowEventTime(a.state));
+  }
+  if (state.shortageFilter === "drawer") {
+    return openRows.filter(drawerMemoForShortageRow);
+  }
+  if (state.shortageFilter === "code") {
+    return [...openRows].sort(
+      (a, b) =>
+        String(a.item.ownCode || "").localeCompare(String(b.item.ownCode || ""), "ko") ||
+        String(a.item.optionName || "").localeCompare(String(b.item.optionName || ""), "ko") ||
+        invoiceSequenceNo(a.invoice) - invoiceSequenceNo(b.invoice),
+    );
+  }
+  return openRows;
+}
+
 function renderShortagePanels() {
-  const rows = state.workflowQueues?.shortageItems || [];
-  if (els.shortageListCount) els.shortageListCount.textContent = `${rows.length}개`;
+  const rows = shortageRowsForCurrentFilter();
+  const openCount = state.workflowQueues?.shortageItems?.length || 0;
+  const completedCount = repickedShortageRows().length;
+  els.shortageFilterBar?.querySelectorAll("[data-shortage-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.shortageFilter === state.shortageFilter);
+  });
+  if (els.shortageListCount) {
+    els.shortageListCount.textContent =
+      state.shortageFilter === "all"
+        ? `대기 ${openCount}개 · 완료 ${completedCount}개`
+        : `${shortageFilterLabel()} ${rows.length}개`;
+  }
 
   if (state.workflowQueueError) {
     renderWorkflowEmpty(els.shortageListBody, state.workflowQueueError);
@@ -885,8 +946,8 @@ function renderShortagePanels() {
   }
 
   if (!rows.length) {
-    renderWorkflowEmpty(els.shortageListBody, "현재 미송피킹 대기 상품이 없습니다.");
-    renderWorkflowEmpty(els.shortageDetail, "미송피킹 대기 상품이 없습니다.");
+    renderWorkflowEmpty(els.shortageListBody, `${shortageFilterLabel()} 대상이 없습니다.`);
+    renderWorkflowEmpty(els.shortageDetail, `${shortageFilterLabel()} 대상이 없습니다.`);
     return;
   }
 
@@ -895,17 +956,17 @@ function renderShortagePanels() {
   }
 
   els.shortageListBody.innerHTML = rows
-    .map(({ invoice, item, state: itemState }) => {
+    .map(({ invoice, item, state: itemState, completed }) => {
       const key = workflowItemKey(invoice, item);
       const orderNo = itemOrderNo(item, invoiceItemIndex(invoice, item));
-      return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
+      return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""} ${completed ? "is-completed" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
         <span class="workflow-row-code">${escapeHtml(item.ownCode || "-")}</span>
         <span class="workflow-row-main">
           <strong>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</strong>
           <span class="workflow-row-order">상품순서 ${orderNo}번</span>
           <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · ${escapeHtml(invoice.invoiceNo || "송장없음")}</small>
         </span>
-        <span class="workflow-row-badge danger">미송 ${Number(itemState?.shortageQty || 0) || 1}</span>
+        <span class="workflow-row-badge ${completed ? "done" : "danger"}">${completed ? "피킹완료" : `미송 ${Number(itemState?.shortageQty || 0) || 1}`}</span>
       </button>`;
     })
     .join("");
@@ -914,6 +975,11 @@ function renderShortagePanels() {
   const selectedState = selected.state || workflowItemState(selected.invoice, selected.item);
   const seller = sellerBadgeMeta(selected.invoice.seller);
   const repickDisabled = allowWorkflowEvents ? "" : "disabled";
+  const selectedKey = workflowItemKey(selected.invoice, selected.item);
+  const selectedCompleted = Boolean(selected.completed);
+  const primaryAction = selectedCompleted
+    ? `<button class="btn" data-action="shortage-repick-reopen" data-order-group="${escapeHtml(selected.invoice.orderGroupNo)}" data-item-no="${escapeHtml(selected.item.sellpiaItemNo)}" type="button" ${repickDisabled}>완료취소</button>`
+    : `<button class="btn primary" data-action="shortage-repicked" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>피킹완료</button>`;
   els.shortageDetail.innerHTML = `<div class="workflow-detail-card">
     <div class="workflow-detail-head">
       <div>
@@ -922,7 +988,7 @@ function renderShortagePanels() {
       </div>
       <div class="workflow-detail-actions">
         ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
-        <button class="btn primary" data-action="shortage-repicked" data-shortage-key="${escapeHtml(workflowItemKey(selected.invoice, selected.item))}" type="button" ${repickDisabled}>피킹완료</button>
+        ${primaryAction}
       </div>
     </div>
     <div class="workflow-detail-main">
@@ -933,7 +999,7 @@ function renderShortagePanels() {
         <dl>
           <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, invoiceItemIndex(selected.invoice, selected.item))}번</dd></div>
           <div><dt>송장번호</dt><dd>${escapeHtml(selected.invoice.invoiceNo || "-")}</dd></div>
-          <div><dt>부족수량</dt><dd>${Number(selectedState?.shortageQty || 0) || 1}개</dd></div>
+          <div><dt>부족수량</dt><dd>${selectedCompleted ? previousShortageQuantity(selected.invoice, selected.item) : Number(selectedState?.shortageQty || 0) || 1}개</dd></div>
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>
           <div><dt>마지막 이벤트</dt><dd>${escapeHtml(formatShortDate(selectedState?.lastEventAt))}</dd></div>
         </dl>
@@ -946,7 +1012,7 @@ function renderShortagePanels() {
             <span>관리메모2</span>
             <textarea data-shortage-field="memo" rows="2" placeholder="상품별 미송 메모">${escapeHtml(selectedState?.memo || selected.item.sellpiaMemo2 || "")}</textarea>
           </label>
-          <button class="btn" data-action="shortage-memo-save" data-shortage-key="${escapeHtml(workflowItemKey(selected.invoice, selected.item))}" type="button" ${repickDisabled}>메모 저장</button>
+          ${selectedCompleted ? '<small class="workflow-help-text">피킹완료 상태에서는 완료취소 후 메모를 수정하세요.</small>' : `<button class="btn" data-action="shortage-memo-save" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>메모 저장</button>`}
         </div>
       </div>
     </div>
@@ -2018,6 +2084,13 @@ function bindEvents() {
     selectPickingCard(card.dataset.slotKey);
   });
   els.orderList.addEventListener("change", onDrawerChange);
+  els.shortageFilterBar?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-shortage-filter]");
+    if (!button) return;
+    state.shortageFilter = button.dataset.shortageFilter || "all";
+    state.selectedShortageKey = "";
+    renderShortagePanels();
+  });
   els.shortageListBody?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-shortage-key]");
     if (!button) return;
@@ -2032,6 +2105,9 @@ function bindEvents() {
     }
     if (button.dataset.action === "shortage-memo-save") {
       saveSelectedShortageMemo(button.dataset.shortageKey).catch(showError);
+    }
+    if (button.dataset.action === "shortage-repick-reopen") {
+      reopenShortageRepick(button.dataset.orderGroup, button.dataset.itemNo).catch(showError);
     }
   });
   els.inspectionListBody?.addEventListener("click", (event) => {
