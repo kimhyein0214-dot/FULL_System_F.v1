@@ -924,6 +924,25 @@ input {
   background: #ede9fe;
 }
 
+.workflow-row.is-completed,
+.workflow-row.is-completed.is-hold,
+.workflow-row.is-completed.is-gold,
+.workflow-row.is-completed.has-shortage {
+  border-left: 4px solid #22c55e;
+  background: #f0fdf4;
+}
+
+.workflow-row.is-completed:hover,
+.workflow-row.is-completed.selected,
+.workflow-row.is-completed.is-hold:hover,
+.workflow-row.is-completed.is-hold.selected,
+.workflow-row.is-completed.is-gold:hover,
+.workflow-row.is-completed.is-gold.selected,
+.workflow-row.is-completed.has-shortage:hover,
+.workflow-row.is-completed.has-shortage.selected {
+  background: #dcfce7;
+}
+
 .workflow-row.selected {
   box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.45);
 }
@@ -1223,8 +1242,9 @@ input {
   background: #f5f3ff;
 }
 
-.inspection-header-skeleton.is-completed [data-action="inspection-complete"] {
-  display: none;
+.inspection-header-skeleton.is-completed {
+  border-left: 4px solid #22c55e;
+  background: #f0fdf4;
 }
 
 .inspection-detail-body {
@@ -1274,6 +1294,11 @@ input {
 
 .workflow-item-row.repicked {
   background: #fff7f7;
+}
+
+.workflow-item-row.inspected,
+.workflow-item-row.inspected.repicked {
+  background: #f0fdf4;
 }
 
 .workflow-item-row span {
@@ -1375,9 +1400,36 @@ input {
   text-align: center;
 }
 
+.workflow-status-cell {
+  display: grid;
+  gap: 2px;
+  border-radius: 7px !important;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.workflow-status-cell span {
+  color: inherit;
+  font-size: 11px;
+}
+
+.workflow-status-cell em {
+  color: #64748b;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
 .workflow-item-row.repicked small {
   background: var(--red-soft);
   color: var(--red);
+}
+
+.workflow-item-row.inspected small,
+.workflow-item-row.inspected.repicked small {
+  background: #dcfce7;
+  color: #15803d;
 }
 
 .workflow-note {
