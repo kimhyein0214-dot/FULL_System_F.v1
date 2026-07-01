@@ -355,6 +355,11 @@ function itemOrderNo(item, fallbackIndex = 0) {
   return Number(item?.itemOrderIndex || 0) || fallbackIndex + 1;
 }
 
+function invoiceItemIndex(invoice, item) {
+  const index = (invoice?.items || []).findIndex((row) => row.sellpiaItemNo === item?.sellpiaItemNo);
+  return index >= 0 ? index : 0;
+}
+
 function renderInvoiceSlots(invoiceIndex, item, itemIndex) {
   const activeSlot = (invoiceIndex % JO_SIZE) + 1;
   const orderNo = itemOrderNo(item, itemIndex);
@@ -719,9 +724,9 @@ function renderShortagePanels() {
   }
 
   els.shortageListBody.innerHTML = rows
-    .map(({ invoice, item, state: itemState }, index) => {
+    .map(({ invoice, item, state: itemState }) => {
       const key = workflowItemKey(invoice, item);
-      const orderNo = itemOrderNo(item, index);
+      const orderNo = itemOrderNo(item, invoiceItemIndex(invoice, item));
       return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
         <span class="workflow-row-code">${escapeHtml(item.ownCode || "-")}</span>
         <span class="workflow-row-main">
@@ -751,7 +756,7 @@ function renderShortagePanels() {
         <h3>${escapeHtml(cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-")}</h3>
         <p>${escapeHtml(selected.item.productName || "")}</p>
         <dl>
-          <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, 0)}번</dd></div>
+          <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, invoiceItemIndex(selected.invoice, selected.item))}번</dd></div>
           <div><dt>송장번호</dt><dd>${escapeHtml(selected.invoice.invoiceNo || "-")}</dd></div>
           <div><dt>부족수량</dt><dd>${Number(selectedState?.shortageQty || 0) || 1}개</dd></div>
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>

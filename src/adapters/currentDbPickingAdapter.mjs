@@ -26,10 +26,9 @@ export function buildDisplayName(recipientName, buyerName) {
 
 export function parseItemOrderIndex(sellpiaItemNo, fallbackSortOrder = null) {
   const text = firstText(sellpiaItemNo);
-  const suffix = text.match(/(?:_|\(|-)(\d+)\)?$/);
-  if (suffix) return Number(suffix[1]);
-  const fallback = firstNumber(fallbackSortOrder);
-  return fallback === null ? null : fallback;
+  const suffix = text.match(/(?:_\[(\d{1,3})\]|\((\d{1,3})\)|_(\d{1,3}))$/);
+  if (suffix) return Number(suffix[1] || suffix[2] || suffix[3]);
+  return null;
 }
 
 export function makeItemStateKey(orderGroupNo, sellpiaItemNo) {
