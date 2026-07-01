@@ -22,9 +22,15 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   overflow: hidden;
+  min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
@@ -38,11 +44,20 @@ input {
 
 .app-shell {
   width: 100vw;
+  height: 100vh;
   height: 100dvh;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 7px;
   padding: 7px;
+  padding: calc(7px + env(safe-area-inset-top, 0px)) 7px calc(7px + env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
+}
+
+@supports (height: 100svh) {
+  .app-shell {
+    height: min(100dvh, 100svh);
+  }
 }
 
 .topbar,

@@ -802,7 +802,7 @@ function renderTray() {
   if (!els.trayBoard) return;
   const invoices = currentTrayInvoices();
   const rows = invoices.flatMap((invoice, invoiceIndex) =>
-    (invoice.items || []).map((item) => ({ invoice, item, invoiceIndex })),
+    (invoice.items || []).map((item, itemIndex) => ({ invoice, item, invoiceIndex, itemIndex })),
   );
   const done = rows.filter(({ item }) => isPicked(item)).length;
   const groupLabel =
@@ -1803,6 +1803,10 @@ async function reorderInvoiceSortOrder() {
   toast(`송장순서 재정렬 완료: ${ordered.length}건`);
 }
 
+async function reorderInvoicesByCurrentView() {
+  return reorderInvoiceSortOrder();
+}
+
 async function completeSelectedShortagePicking(shortageKey = state.selectedShortageKey) {
   const row = (state.workflowQueues?.shortageItems || []).find(({ invoice, item }) => workflowItemKey(invoice, item) === shortageKey);
   if (!row) {
@@ -2381,7 +2385,7 @@ function bindEvents() {
     const button = event.target.closest("[data-dashboard-action]");
     if (!button) return;
     if (button.dataset.dashboardAction === "reorder-invoices") {
-      reorderInvoiceSortOrder().catch(showError);
+      reorderInvoicesByCurrentView().catch(showError);
     }
     if (button.dataset.dashboardAction === "toggle-csv") {
       exportToggleCsv();
