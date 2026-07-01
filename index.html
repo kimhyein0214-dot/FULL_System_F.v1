@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pretendard/1.3.9/static/pretendard.css">
-    <link rel="stylesheet" href="src/styles/picking.css?v=20260701-design-tune1">
+    <link rel="stylesheet" href="src/styles/picking.css?v=20260701-workflow-read2">
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -138,14 +138,16 @@
             <aside class="workflow-list">
               <div class="workflow-list-head">
                 <strong>대상 목록</strong>
-                <span>레이아웃 준비중</span>
+                <span id="shortage-list-count">대기</span>
               </div>
-              <div class="workflow-empty">데이터 구조 확정 후 미송 대상이 연결됩니다.</div>
+              <div id="shortage-list-body" class="workflow-list-body">
+                <div class="workflow-empty">이벤트 큐를 불러오는 중입니다.</div>
+              </div>
             </aside>
             <section class="workflow-detail">
-              <div class="workflow-placeholder">
+              <div id="shortage-detail" class="workflow-placeholder">
                 <strong>미송 상품 상세</strong>
-                <p>사진, 자사코드, 옵션명, 부족수량, 서랍번호, 송장 정보를 이 영역에 배치합니다.</p>
+                <p>미송 대상 상품을 선택하면 송장, 자사코드, 옵션명, 부족수량 흐름을 확인합니다.</p>
               </div>
             </section>
           </div>
@@ -169,24 +171,28 @@
             <aside class="workflow-list">
               <div class="workflow-list-head">
                 <strong>송장 목록</strong>
-                <span>레이아웃 준비중</span>
+                <span id="inspection-list-count">대기</span>
               </div>
-              <div class="workflow-empty">미송피킹 완료 송장과 일반 검품 송장을 이 영역에 표시합니다.</div>
+              <div id="inspection-list-body" class="workflow-list-body">
+                <div class="workflow-empty">검품 대기 송장을 불러오는 중입니다.</div>
+              </div>
             </aside>
             <section class="workflow-detail">
-              <div class="inspection-header-skeleton">
-                <div>
-                  <strong>선택 송장</strong>
-                  <span>송장번호 / 주문자 / 판매처</span>
+              <div id="inspection-detail" class="inspection-detail-body">
+                <div class="inspection-header-skeleton">
+                  <div>
+                    <strong>선택 송장</strong>
+                    <span>송장번호 / 주문자 / 판매처</span>
+                  </div>
+                  <div class="inspection-actions">
+                    <button class="btn" type="button" disabled>보류 처리</button>
+                    <button class="btn primary" type="button" disabled>완료 처리</button>
+                  </div>
                 </div>
-                <div class="inspection-actions">
-                  <button class="btn" type="button" disabled>보류 처리</button>
-                  <button class="btn primary" type="button" disabled>완료 처리</button>
+                <div class="workflow-placeholder">
+                  <strong>송장 전체 상품</strong>
+                  <p>검품 대기 송장을 선택하면 해당 송장의 전체 상품을 표시합니다.</p>
                 </div>
-              </div>
-              <div class="workflow-placeholder">
-                <strong>송장 전체 상품</strong>
-                <p>상품 전체 리스트, 미송/보류/메모 배지, 검품 메모칸을 이 영역에 배치합니다.</p>
               </div>
             </section>
           </div>
@@ -213,6 +219,6 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="src/app/pickingApp.mjs?v=20260701-design-tune1"></script>
+    <script type="module" src="src/app/pickingApp.mjs?v=20260701-workflow-read2"></script>
   </body>
 </html>

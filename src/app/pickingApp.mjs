@@ -1,3 +1,4 @@
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-workflow-read2";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
@@ -25,6 +26,10 @@ const state = {
   trayExpanded: false,
   currentTrayKey: "",
   searchText: "",
+  workflowQueues: null,
+  workflowQueueError: "",
+  selectedShortageKey: "",
+  selectedInspectionGroup: "",
   workflowEventsReady: false,
   workflowEventsChecked: false,
   saving: new Set(),
@@ -48,6 +53,12 @@ const els = {
   dashboardPanel: document.getElementById("dashboard-panel"),
   shortagePanel: document.getElementById("shortage-panel"),
   inspectionPanel: document.getElementById("inspection-panel"),
+  shortageListCount: document.getElementById("shortage-list-count"),
+  shortageListBody: document.getElementById("shortage-list-body"),
+  shortageDetail: document.getElementById("shortage-detail"),
+  inspectionListCount: document.getElementById("inspection-list-count"),
+  inspectionListBody: document.getElementById("inspection-list-body"),
+  inspectionDetail: document.getElementById("inspection-detail"),
   dashboardSummary: document.getElementById("dashboard-summary"),
   orderList: document.getElementById("order-list"),
   panelSubtitle: document.getElementById("panel-subtitle"),
@@ -384,6 +395,54 @@ function sellerBadgeMeta(seller) {
   return { label: "메이크샵", className: "seller-makeshop" };
 }
 
+function workflowItemKey(invoice, item) {
+  return `${invoice.orderGroupNo}::${item.sellpiaItemNo}`;
+}
+
+function workflowItemState(invoice, item) {
+  return state.workflowQueues?.workflowState?.itemStateByKey?.get(workflowItemKey(invoice, item)) || null;
+}
+
+function workflowInvoiceState(invoice) {
+  return state.workflowQueues?.workflowState?.invoiceStateByKey?.get(invoice.orderGroupNo) || null;
+}
+
+function formatShortDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function workflowSummary() {
+  const queues = state.workflowQueues;
+  if (!queues) {
+    return {
+      ready: false,
+      status: state.workflowQueueError ? "오류" : "대기",
+      shortageItems: 0,
+      inspectionInvoices: 0,
+      repickedItems: 0,
+      missingInvoices: 0,
+      eventRows: 0,
+    };
+  }
+
+  const repickedItems = Array.from(queues.workflowState.itemStateByKey.values()).filter(
+    (row) => row.shortageRepicked && !row.inspected && !row.cancelled,
+  ).length;
+
+  return {
+    ready: true,
+    status: "ON",
+    shortageItems: queues.shortageItems.length,
+    inspectionInvoices: queues.inspectionInvoices.length,
+    repickedItems,
+    missingInvoices: Math.max(0, queues.orderGroupNos.length - queues.viewModel.invoices.length),
+    eventRows: queues.itemEvents.length + queues.invoiceEvents.length,
+  };
+}
+
 function invoiceMatchesFilter(invoice, filterMode) {
   const stats = invoiceStats(invoice);
   if (filterMode === "todo") return stats.todo;
@@ -415,7 +474,9 @@ function renderMetrics() {
   els.metricShortage.textContent = String(items.filter((item) => shortageQty(item) > 0).length);
   els.metricHold.textContent = String(items.filter(isHold).length);
   els.metricWrite.textContent = allowWorkflowEvents ? "EVENT" : allowWrites ? "ON" : "OFF";
-  if (!allowWorkflowEvents) els.metricEvents.textContent = "OFF";
+  const workflow = workflowSummary();
+  if (workflow.ready || state.workflowQueueError) els.metricEvents.textContent = workflow.status;
+  else if (!allowWorkflowEvents) els.metricEvents.textContent = "OFF";
   else if (!state.workflowEventsChecked) els.metricEvents.textContent = "대기";
   else els.metricEvents.textContent = state.workflowEventsReady ? "ON" : "미준비";
 }
@@ -440,6 +501,7 @@ function renderDashboard() {
     { label: "골드송장", value: goldInvoices, total: invoices.length, unit: "건", tone: "gold" },
     { label: "골드상품", value: goldItems, total: items.length, unit: "개", tone: "gold" },
   ];
+  const workflow = workflowSummary();
 
   els.dashboardSummary.innerHTML = `<div class="dashboard-overview">
       <div><span>송장</span><strong>${invoices.length}</strong><em>건</em></div>
@@ -459,6 +521,23 @@ function renderDashboard() {
           </div>`;
         })
         .join("")}
+    </div>
+    <div class="workflow-dashboard">
+      <div class="workflow-flow-head">
+        <strong>미송 → 검품 연결</strong>
+        <span class="${workflow.ready ? "ok" : state.workflowQueueError ? "bad" : "wait"}">${escapeHtml(workflow.status)}</span>
+      </div>
+      ${
+        state.workflowQueueError
+          ? `<div class="workflow-error">${escapeHtml(state.workflowQueueError)}</div>`
+          : `<div class="workflow-flow-grid">
+              <div><span>미송피킹 대기</span><strong>${workflow.shortageItems}</strong><em>상품</em></div>
+              <div><span>검품 대기</span><strong>${workflow.inspectionInvoices}</strong><em>송장</em></div>
+              <div><span>피킹완료 미검품</span><strong>${workflow.repickedItems}</strong><em>상품</em></div>
+              <div class="${workflow.missingInvoices ? "bad" : ""}"><span>원본 연결 누락</span><strong>${workflow.missingInvoices}</strong><em>송장</em></div>
+            </div>
+            <p>미송피킹/검품은 선택 날짜가 아니라 workflow event 상태 기준으로 집계됩니다.</p>`
+      }
     </div>`;
 }
 
@@ -608,6 +687,150 @@ function renderOrderList() {
   els.orderList.innerHTML = rows.map(({ invoice, item, invoiceIndex, itemIndex }) => renderPickingRow(invoice, item, invoiceIndex, itemIndex)).join("");
 }
 
+function renderWorkflowEmpty(target, message) {
+  if (target) target.innerHTML = `<div class="workflow-empty">${escapeHtml(message)}</div>`;
+}
+
+function renderShortagePanels() {
+  const rows = state.workflowQueues?.shortageItems || [];
+  if (els.shortageListCount) els.shortageListCount.textContent = `${rows.length}개`;
+
+  if (state.workflowQueueError) {
+    renderWorkflowEmpty(els.shortageListBody, state.workflowQueueError);
+    renderWorkflowEmpty(els.shortageDetail, "이벤트 큐를 불러오지 못했습니다.");
+    return;
+  }
+
+  if (!state.workflowQueues) {
+    renderWorkflowEmpty(els.shortageListBody, "이벤트 큐를 불러오는 중입니다.");
+    renderWorkflowEmpty(els.shortageDetail, "미송 대상 상품을 선택하면 상세가 표시됩니다.");
+    return;
+  }
+
+  if (!rows.length) {
+    renderWorkflowEmpty(els.shortageListBody, "현재 미송피킹 대기 상품이 없습니다.");
+    renderWorkflowEmpty(els.shortageDetail, "미송피킹 대기 상품이 없습니다.");
+    return;
+  }
+
+  if (!rows.some(({ invoice, item }) => workflowItemKey(invoice, item) === state.selectedShortageKey)) {
+    state.selectedShortageKey = workflowItemKey(rows[0].invoice, rows[0].item);
+  }
+
+  els.shortageListBody.innerHTML = rows
+    .map(({ invoice, item, state: itemState }) => {
+      const key = workflowItemKey(invoice, item);
+      return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
+        <span class="workflow-row-code">${escapeHtml(item.ownCode || "-")}</span>
+        <span class="workflow-row-main">
+          <strong>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</strong>
+          <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · ${escapeHtml(invoice.invoiceNo || "송장없음")}</small>
+        </span>
+        <span class="workflow-row-badge danger">미송 ${Number(itemState?.shortageQty || 0) || 1}</span>
+      </button>`;
+    })
+    .join("");
+
+  const selected = rows.find(({ invoice, item }) => workflowItemKey(invoice, item) === state.selectedShortageKey) || rows[0];
+  const selectedState = selected.state || workflowItemState(selected.invoice, selected.item);
+  const seller = sellerBadgeMeta(selected.invoice.seller);
+  els.shortageDetail.innerHTML = `<div class="workflow-detail-card">
+    <div class="workflow-detail-head">
+      <div>
+        <strong>${escapeHtml(selected.item.ownCode || "-")}</strong>
+        <span>${escapeHtml(selected.invoice.displayName || selected.invoice.csDisplayName || "-")}</span>
+      </div>
+      ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+    </div>
+    <div class="workflow-detail-main">
+      <div class="workflow-photo">${productImageUrl(selected.item.sellpiaProductCode) ? `<img src="${productImageUrl(selected.item.sellpiaProductCode)}" alt="">` : "사진"}</div>
+      <div class="workflow-detail-text">
+        <h3>${escapeHtml(cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-")}</h3>
+        <p>${escapeHtml(selected.item.productName || "")}</p>
+        <dl>
+          <div><dt>송장번호</dt><dd>${escapeHtml(selected.invoice.invoiceNo || "-")}</dd></div>
+          <div><dt>부족수량</dt><dd>${Number(selectedState?.shortageQty || 0) || 1}개</dd></div>
+          <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>
+          <div><dt>마지막 이벤트</dt><dd>${escapeHtml(formatShortDate(selectedState?.lastEventAt))}</dd></div>
+        </dl>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderInspectionPanels() {
+  const invoices = state.workflowQueues?.inspectionInvoices || [];
+  if (els.inspectionListCount) els.inspectionListCount.textContent = `${invoices.length}건`;
+
+  if (state.workflowQueueError) {
+    renderWorkflowEmpty(els.inspectionListBody, state.workflowQueueError);
+    renderWorkflowEmpty(els.inspectionDetail, "이벤트 큐를 불러오지 못했습니다.");
+    return;
+  }
+
+  if (!state.workflowQueues) {
+    renderWorkflowEmpty(els.inspectionListBody, "검품 대기 송장을 불러오는 중입니다.");
+    renderWorkflowEmpty(els.inspectionDetail, "검품 대기 송장을 선택하면 전체 상품이 표시됩니다.");
+    return;
+  }
+
+  if (!invoices.length) {
+    renderWorkflowEmpty(els.inspectionListBody, "현재 검품 대기 송장이 없습니다.");
+    renderWorkflowEmpty(els.inspectionDetail, "검품 대기 송장이 없습니다.");
+    return;
+  }
+
+  if (!invoices.some((invoice) => invoice.orderGroupNo === state.selectedInspectionGroup)) {
+    state.selectedInspectionGroup = invoices[0].orderGroupNo;
+  }
+
+  els.inspectionListBody.innerHTML = invoices
+    .map((invoice) => {
+      const itemStates = (invoice.items || []).map((item) => workflowItemState(invoice, item)).filter(Boolean);
+      const repicked = itemStates.filter((row) => row.shortageRepicked && !row.inspected && !row.cancelled).length;
+      return `<button class="workflow-row ${invoice.orderGroupNo === state.selectedInspectionGroup ? "selected" : ""}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
+        <span class="workflow-row-code">${escapeHtml(invoice.invoiceNo || "송장없음")}</span>
+        <span class="workflow-row-main">
+          <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
+          <small>상품 ${invoice.items.length}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")}</small>
+        </span>
+        <span class="workflow-row-badge warn">검품 ${repicked}</span>
+      </button>`;
+    })
+    .join("");
+
+  const selected = invoices.find((invoice) => invoice.orderGroupNo === state.selectedInspectionGroup) || invoices[0];
+  const seller = sellerBadgeMeta(selected.seller);
+  const invoiceState = workflowInvoiceState(selected);
+  els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton">
+      <div>
+        <strong>${escapeHtml(selected.invoiceNo || "송장없음")}</strong>
+        <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
+      </div>
+      <div class="inspection-actions">
+        ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+        <button class="btn" type="button" disabled>보류 처리</button>
+        <button class="btn primary" type="button" disabled>완료 처리</button>
+      </div>
+    </div>
+    <div class="workflow-item-table">
+      ${(selected.items || [])
+        .map((item, index) => {
+          const itemState = workflowItemState(selected, item);
+          const rowClass = itemState?.shortageRepicked && !itemState?.inspected ? "repicked" : "";
+          return `<div class="workflow-item-row ${rowClass}">
+            <span>${index + 1}</span>
+            <strong>${escapeHtml(item.ownCode || "-")}</strong>
+            <em>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</em>
+            <b>${Number(item.quantity) || 1}개</b>
+            ${rowClass ? '<small>미송피킹 완료</small>' : "<small>전체상품</small>"}
+          </div>`;
+        })
+        .join("")}
+    </div>
+    ${invoiceState?.memo ? `<div class="workflow-note">${escapeHtml(invoiceState.memo)}</div>` : ""}`;
+}
+
 function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
   const shortage = shortageQty(item);
   const checked = isPicked(item);
@@ -670,6 +893,8 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
 function render() {
   renderMetrics();
   renderDashboard();
+  renderShortagePanels();
+  renderInspectionPanels();
   renderFilters();
   renderGroups();
   renderOrderList();
@@ -876,6 +1101,23 @@ async function loadPickingData() {
     shortageRows,
   });
   rebuildGroups();
+  render();
+  await loadWorkflowData();
+}
+
+async function loadWorkflowData() {
+  state.workflowQueueError = "";
+  try {
+    state.workflowQueues = await loadWorkflowQueues(db);
+    state.workflowEventsChecked = true;
+    state.workflowEventsReady = true;
+  } catch (error) {
+    state.workflowQueues = null;
+    state.workflowEventsChecked = true;
+    state.workflowEventsReady = false;
+    state.workflowQueueError = `workflow event 읽기 실패: ${error.message || error}`;
+    console.warn("workflow queue load failed", error);
+  }
   render();
 }
 
@@ -1125,6 +1367,18 @@ function bindEvents() {
     selectPickingCard(card.dataset.slotKey);
   });
   els.orderList.addEventListener("change", onDrawerChange);
+  els.shortageListBody?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-shortage-key]");
+    if (!button) return;
+    state.selectedShortageKey = button.dataset.shortageKey;
+    renderShortagePanels();
+  });
+  els.inspectionListBody?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-inspection-group]");
+    if (!button) return;
+    state.selectedInspectionGroup = button.dataset.inspectionGroup;
+    renderInspectionPanels();
+  });
   els.trayHandle?.addEventListener("click", () => {
     state.trayOpen = !state.trayOpen;
     renderTray();

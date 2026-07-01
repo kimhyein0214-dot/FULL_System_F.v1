@@ -10,7 +10,7 @@ function text(value) {
 }
 
 function uniqueTexts(values = []) {
-  return [...new Set(values.map(text).filter(Boolean))];
+  return [...new Set((values || []).map(text).filter(Boolean))];
 }
 
 async function fetchAllRows(makeQuery, pageSize = 1000) {
@@ -106,4 +106,3 @@ export async function loadWorkflowQueues(db, { pageSize = 1000 } = {}) {
     ...buildWorkflowQueues({ orders, orderItems, itemEvents, invoiceEvents }),
   };
 }
-
