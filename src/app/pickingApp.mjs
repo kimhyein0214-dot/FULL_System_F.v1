@@ -1177,6 +1177,33 @@ function filterLabel(filterMode) {
   }[filterMode] || "전체";
 }
 
+function dashboardItemBuckets(items = []) {
+  return items.reduce(
+    (acc, item) => {
+      if (isHold(item)) acc.hold += 1;
+      else if (shortageQty(item) > 0) acc.shortage += 1;
+      else if (isPicked(item)) acc.picked += 1;
+      else acc.todo += 1;
+      return acc;
+    },
+    { picked: 0, shortage: 0, hold: 0, todo: 0 },
+  );
+}
+
+function dashboardDonutSegments(segments = []) {
+  const total = segments.reduce((sum, segment) => sum + Math.max(0, Number(segment.value) || 0), 0);
+  if (!total) return { total: 0, style: "#e5eaf2 0 100%", segments };
+  let cursor = 0;
+  const parts = segments
+    .filter((segment) => Number(segment.value) > 0)
+    .map((segment) => {
+      const start = cursor;
+      cursor += (Number(segment.value) / total) * 100;
+      return `${segment.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+    });
+  return { total, style: parts.join(", "), segments };
+}
+
 function renderMetrics() {
   const invoices = state.viewModel?.invoices || [];
   const items = invoices.flatMap((invoice) => invoice.items || []);
@@ -1214,16 +1241,22 @@ function renderDashboard() {
   const receivingMatchedRows = state.receivingLabel.rowCount ? openShortageRows.filter(shortageRowReceivingEntry) : [];
   const receivingMatchedQty = receivingMatchedRows.reduce((sum, row) => sum + (Number(row.state?.shortageQty || 0) || 1), 0);
   const receivingStatus = state.receivingLabel.rowCount ? `${state.receivingLabel.rowCount}종 · ${receivingMatchedRows.length}건` : "라벨 없음";
-  const chartRows = [
-    { label: "피킹완료", value: picked, total: items.length, unit: "개", tone: "good" },
-    { label: "미송", value: shortage, total: items.length, unit: "개", tone: "danger" },
-    { label: "보류", value: hold, total: items.length, unit: "개", tone: "warn" },
-    { label: "검품대기", value: workflow.inspectionInvoices, total: Math.max(workflow.inspectionInvoices, workflow.completedInvoices), unit: "건", tone: "muted" },
-    { label: "미송완료 미검품", value: workflow.repickedInvoices, total: Math.max(workflow.inspectionInvoices, 1), unit: "건", tone: "danger" },
-    { label: "작업완료", value: workflow.completedInvoices, total: Math.max(workflow.inspectionInvoices + workflow.completedInvoices, 1), unit: "건", tone: "good" },
-    { label: "서랍없음", value: noDrawer, total: invoices.length, unit: "건", tone: "muted" },
-    { label: "골드송장", value: goldInvoices, total: invoices.length, unit: "건", tone: "gold" },
-    { label: "골드상품", value: goldItems, total: items.length, unit: "개", tone: "gold" },
+  const buckets = dashboardItemBuckets(items);
+  const pickingDonut = dashboardDonutSegments([
+    { label: "완료", value: buckets.picked, unit: "개", color: "#15945b" },
+    { label: "미송", value: buckets.shortage, unit: "개", color: "#d83b3b" },
+    { label: "보류", value: buckets.hold, unit: "개", color: "#7c3aed" },
+    { label: "대기", value: buckets.todo, unit: "개", color: "#cbd5e1" },
+  ]);
+  const flowDonut = dashboardDonutSegments([
+    { label: "미송대기", value: workflow.shortageItems, unit: "개", color: "#d83b3b" },
+    { label: "입고매칭", value: receivingMatchedQty || receivingMatchedRows.length, unit: "개", color: "#b7791f" },
+    { label: "검품대기", value: workflow.inspectionInvoices, unit: "건", color: "#2563eb" },
+    { label: "완료", value: workflow.completedInvoices, unit: "건", color: "#15945b" },
+  ]);
+  const donutRows = [
+    { title: "피킹 진행", totalLabel: `${pickingDonut.total}개`, donut: pickingDonut },
+    { title: "미송/검품 흐름", totalLabel: `${flowDonut.total}건/개`, donut: flowDonut },
   ];
 
   els.dashboardSummary.innerHTML = `<div class="dashboard-overview">
@@ -1235,17 +1268,21 @@ function renderDashboard() {
       <div><span>골드</span><strong>${goldInvoices}</strong><em>송장</em></div>
     </div>
     <div class="dashboard-donut-grid">
-      ${chartRows
+      ${donutRows
         .map((row) => {
-          const pct = percent(row.value, row.total);
-          return `<div class="dashboard-donut-card ${row.tone}">
-            <div class="dashboard-donut" style="--pct:${pct}%">
-              <strong>${pct}</strong>
-              <span>%</span>
+          return `<div class="dashboard-donut-card">
+            <div class="dashboard-donut" style="--segments:${row.donut.style}">
+              <strong>${escapeHtml(row.totalLabel)}</strong>
             </div>
             <div class="dashboard-donut-text">
-              <span>${escapeHtml(row.label)}</span>
-              <strong>${row.value}${escapeHtml(row.unit)} / ${row.total}${escapeHtml(row.unit)}</strong>
+              <span>${escapeHtml(row.title)}</span>
+              <div class="dashboard-donut-legend">
+                ${row.donut.segments
+                  .map(
+                    (segment) => `<em style="--legend-color:${segment.color}"><i></i>${escapeHtml(segment.label)} ${segment.value}${escapeHtml(segment.unit)}</em>`,
+                  )
+                  .join("")}
+              </div>
             </div>
           </div>`;
         })
@@ -1742,7 +1779,83 @@ function renderOrderList() {
     return;
   }
 
+  if (isGoldGroupedPickingView(invoices)) {
+    els.orderList.innerHTML = invoices.map((invoice, invoiceIndex) => renderGoldInvoiceCard(invoice, invoiceIndex)).join("");
+    return;
+  }
+
   els.orderList.innerHTML = rows.map(({ invoice, item, invoiceIndex, itemIndex }) => renderPickingRow(invoice, item, invoiceIndex, itemIndex)).join("");
+}
+
+function isGoldGroupedPickingView(invoices = currentVisibleInvoices()) {
+  if (!invoices.some(invoiceHasGold)) return false;
+  return state.filterMode === "gold" || state.groupInfos[state.currentGroup]?.kind === "gold";
+}
+
+function sortedInvoiceItemsForPicking(invoice) {
+  return [...(invoice.items || [])].sort(
+    (a, b) =>
+      (itemOrderNo(a, 999998) || 999999) - (itemOrderNo(b, 999998) || 999999) ||
+      (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
+      String(a.sellpiaItemNo || "").localeCompare(String(b.sellpiaItemNo || ""), "ko", { numeric: true }),
+  );
+}
+
+function renderGoldInvoiceCard(invoice, invoiceIndex = 0) {
+  const items = sortedInvoiceItemsForPicking(invoice);
+  const picked = items.filter(isPicked).length;
+  const shortage = items.filter((item) => shortageQty(item) > 0).length;
+  const qty = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+  const seller = sellerBadgeMeta(invoice.seller);
+  return `<article class="gold-invoice-card">
+    <div class="gold-invoice-head">
+      <div>
+        <strong>${escapeHtml(invoiceSequenceWithGroupLabel(invoice, invoiceIndex))}</strong>
+        <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · ${items.length}종 ${qty}개</span>
+      </div>
+      <div class="gold-invoice-badges">
+        ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+        <span class="gold-badge">골드송장</span>
+        ${shortage ? `<span class="workflow-row-badge danger">미송 ${shortage}</span>` : ""}
+        <span class="workflow-row-badge done">${picked}/${items.length}</span>
+      </div>
+    </div>
+    <div class="gold-item-list">
+      ${items.map((item, itemIndex) => renderGoldInvoiceItem(invoice, item, invoiceIndex, itemIndex)).join("")}
+    </div>
+  </article>`;
+}
+
+function renderGoldInvoiceItem(invoice, item, invoiceIndex = 0, itemIndex = 0) {
+  const key = itemSlotKey(invoice, item);
+  const checked = isPicked(item);
+  const shortage = shortageQty(item);
+  const imageUrl = productImageUrl(item.sellpiaProductCode);
+  const option = cleanOptionName(item.optionName, item.ownCode) || item.productName || "-";
+  const classes = [
+    "gold-item-row",
+    checked ? "is-picked" : "",
+    shortage ? "has-shortage" : "",
+    isHold(item) ? "has-hold" : "",
+    isGoldItem(item) ? "is-gold" : "",
+    key === state.currentTrayKey ? "is-selected" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `<div class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" data-slot-key="${escapeHtml(key)}">
+    <button class="pick-check ${checked ? "checked" : ""}" data-action="toggle" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">${checked ? "✓" : ""}</button>
+    <div class="gold-item-photo">${imageUrl ? `<img src="${imageUrl}" ${photoImgAttrs(imageUrl, photoTitleForItem(item))} alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
+    <div class="gold-item-main">
+      <span class="workflow-row-order">상품순서 ${itemOrderNo(item, itemIndex)}번</span>
+      <strong class="${optionClass(item, "option")}">${escapeHtml(option)}</strong>
+      <small>${escapeHtml(item.ownCode || "-")} · ${escapeHtml(item.productName || "")}</small>
+    </div>
+    <span class="gold-item-qty">${Number(item.quantity) || 1}개</span>
+    <div class="shortage-control gold-shortage-control">
+      ${shortageQtyInput(invoice, item, shortage, "compact")}
+    </div>
+    <textarea class="drawer-input gold-drawer-input" inputmode="numeric" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" rows="1" placeholder="서랍">${escapeHtml(invoiceDrawerValue(invoice))}</textarea>
+  </div>`;
 }
 
 function renderWorkflowEmpty(target, message) {
@@ -2839,7 +2952,8 @@ function itemDataSelector(invoice, item) {
 function paintPickingItemState(invoice, item) {
   const picked = isPicked(item);
   const shortage = shortageQty(item);
-  const card = els.orderList?.querySelector(`.picking-item-card${itemDataSelector(invoice, item)}`);
+  const selector = itemDataSelector(invoice, item);
+  const card = els.orderList?.querySelector(`.picking-item-card${selector}, .gold-item-row${selector}`);
   if (card) {
     card.classList.toggle("is-picked", picked);
     card.classList.toggle("has-shortage", shortage > 0);
