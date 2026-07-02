@@ -196,7 +196,7 @@ export function buildSyntheticMemoEvents({ orders = [], orderItems = [] } = {}) 
     const order = ordersByGroup.get(groupNo) || {};
     const memo1 = invoiceMemo1(order) || invoiceMemo1(item);
     const memo2 = itemMemo2(item);
-    if (!memo1 && !memo2) continue;
+    if (!memo2) continue;
 
     const repickDone = isRepickDoneMemo(memo2);
     syntheticItemEvents.push({
