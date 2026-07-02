@@ -1177,34 +1177,6 @@ function filterLabel(filterMode) {
   }[filterMode] || "전체";
 }
 
-function itemZoneLabel(item = {}) {
-  const code = String(item.ownCode || item.raw?.prod_code || item.raw?.p_dpcode || "").trim().toUpperCase();
-  const normalized = code.replace(/^\[[^\]]+\]\s*/, "");
-  const match = normalized.match(/([A-Z가-힣]{1,4})[-_]\d{1,3}/);
-  if (match) return match[1];
-  const fallback = normalized.match(/^([A-Z가-힣]{1,4})/);
-  return fallback?.[1] || "기타";
-}
-
-function dashboardZoneStats(invoices = []) {
-  const zones = new Map();
-  for (const invoice of invoices) {
-    for (const item of invoice.items || []) {
-      const zone = itemZoneLabel(item);
-      if (!zones.has(zone)) zones.set(zone, { zone, items: 0, picked: 0, shortage: 0, invoices: new Set() });
-      const stat = zones.get(zone);
-      stat.items += 1;
-      stat.picked += isPicked(item) ? 1 : 0;
-      stat.shortage += shortageQty(item) > 0 ? 1 : 0;
-      stat.invoices.add(invoice.orderGroupNo);
-    }
-  }
-  return [...zones.values()]
-    .map((stat) => ({ ...stat, invoices: stat.invoices.size }))
-    .sort((a, b) => b.shortage - a.shortage || b.items - a.items || a.zone.localeCompare(b.zone, "ko"))
-    .slice(0, 12);
-}
-
 function renderMetrics() {
   const invoices = state.viewModel?.invoices || [];
   const items = invoices.flatMap((invoice) => invoice.items || []);
@@ -1242,7 +1214,6 @@ function renderDashboard() {
   const receivingMatchedRows = state.receivingLabel.rowCount ? openShortageRows.filter(shortageRowReceivingEntry) : [];
   const receivingMatchedQty = receivingMatchedRows.reduce((sum, row) => sum + (Number(row.state?.shortageQty || 0) || 1), 0);
   const receivingStatus = state.receivingLabel.rowCount ? `${state.receivingLabel.rowCount}종 · ${receivingMatchedRows.length}건` : "라벨 없음";
-  const zoneStats = dashboardZoneStats(invoices);
   const chartRows = [
     { label: "피킹완료", value: picked, total: items.length, unit: "개", tone: "good" },
     { label: "미송", value: shortage, total: items.length, unit: "개", tone: "danger" },
@@ -1263,16 +1234,19 @@ function renderDashboard() {
       <div><span>보류</span><strong>${holdInvoices}</strong><em>송장</em></div>
       <div><span>골드</span><strong>${goldInvoices}</strong><em>송장</em></div>
     </div>
-    <div class="dashboard-chart">
+    <div class="dashboard-donut-grid">
       ${chartRows
         .map((row) => {
           const pct = percent(row.value, row.total);
-          return `<div class="dashboard-chart-row ${row.tone}">
-            <div class="chart-head">
+          return `<div class="dashboard-donut-card ${row.tone}">
+            <div class="dashboard-donut" style="--pct:${pct}%">
+              <strong>${pct}</strong>
+              <span>%</span>
+            </div>
+            <div class="dashboard-donut-text">
               <span>${escapeHtml(row.label)}</span>
               <strong>${row.value}${escapeHtml(row.unit)} / ${row.total}${escapeHtml(row.unit)}</strong>
             </div>
-            <div class="chart-track"><div class="chart-fill" style="width:${pct}%"></div></div>
           </div>`;
         })
         .join("")}
@@ -1312,25 +1286,6 @@ function renderDashboard() {
         <button class="btn" data-dashboard-tab="shortage" type="button">미송피킹</button>
         <button class="btn" data-dashboard-tab="inspection" type="button">검품대기</button>
       </div>
-    </div>
-    <div class="dashboard-card dashboard-zone-card">
-      <h3>구역현황</h3>
-      <div class="dashboard-zone-list">
-        ${
-          zoneStats.length
-            ? zoneStats
-                .map(
-                  (row) => `<div class="${row.shortage ? "warn" : ""}">
-                    <strong>${escapeHtml(row.zone)}</strong>
-                    <span>${row.items}개 · ${row.invoices}송장</span>
-                    <em>${row.shortage ? `미송 ${row.shortage}` : `완료 ${row.picked}`}</em>
-                  </div>`,
-                )
-                .join("")
-            : '<div><strong>-</strong><span>표시할 구역 없음</span><em>-</em></div>'
-        }
-      </div>
-      <p>자사코드 앞 구역 기준의 읽기 전용 현황입니다.</p>
     </div>
     <div class="dashboard-card dashboard-workflow-card">
       <h3>검품/완료 확인</h3>
@@ -1618,7 +1573,7 @@ function renderFilters() {
 }
 
 function sideShortcutConfig() {
-  if (["picking", "gold"].includes(state.activeTab)) {
+  if (state.activeTab === "picking") {
     return {
       title: "상태 바로가기",
       items: [
@@ -1709,7 +1664,6 @@ function renderSideShortcuts() {
 function applySideShortcut(type, value) {
   if (type === "filter") {
     state.filterMode = value || "all";
-    if (state.activeTab === "gold" && state.filterMode !== "gold") state.activeTab = "picking";
     render();
     return;
   }
@@ -2752,7 +2706,7 @@ function renderShell() {
     els.sidebarToggle.title = state.sidebarCollapsed ? "사이드바 펼치기" : "사이드바 접기";
     els.sidebarToggle.setAttribute("aria-expanded", String(!state.sidebarCollapsed));
   }
-  if (els.pickingPanel) els.pickingPanel.hidden = !["picking", "gold"].includes(state.activeTab);
+  if (els.pickingPanel) els.pickingPanel.hidden = state.activeTab !== "picking";
   if (els.dashboardPanel) els.dashboardPanel.hidden = state.activeTab !== "dashboard";
   if (els.shortagePanel) els.shortagePanel.hidden = state.activeTab !== "shortage";
   if (els.inspectionPanel) els.inspectionPanel.hidden = state.activeTab !== "inspection";
@@ -2767,7 +2721,7 @@ function renderActivePanel(options = {}) {
     renderDashboard();
     return;
   }
-  if (["picking", "gold"].includes(state.activeTab)) {
+  if (state.activeTab === "picking") {
     renderFilters();
     renderGroups();
     renderOrderList();
@@ -4445,14 +4399,13 @@ async function loadWorkflowData() {
 }
 
 function setActiveTab(tab) {
-  const allowedTabs = new Set(["dashboard", "picking", "gold", "shortage", "inspection", "cs", "completed"]);
-  state.activeTab = allowedTabs.has(tab) ? tab : "picking";
-  if (state.activeTab === "gold") {
+  const requestedTab = tab === "gold" ? "picking" : tab;
+  const allowedTabs = new Set(["dashboard", "picking", "shortage", "inspection", "cs", "completed"]);
+  state.activeTab = allowedTabs.has(requestedTab) ? requestedTab : "picking";
+  if (tab === "gold") {
     state.filterMode = "gold";
     state.searchText = "";
     if (els.searchInput) els.searchInput.value = "";
-  } else if (tab === "picking" && state.filterMode === "gold") {
-    state.filterMode = "all";
   }
   renderShell();
   renderActivePanelSoon(0, { metrics: false });
@@ -4503,7 +4456,7 @@ function selectFirstItemOfInvoice(invoice, shouldRender = true) {
   const key = itemSlotKey(invoice, item);
   state.currentTrayKey = key;
   if (shouldRender) {
-    if (["picking", "gold"].includes(state.activeTab)) renderPickingSurfaces();
+    if (state.activeTab === "picking") renderPickingSurfaces();
     else render();
   } else {
     selectPickingCard(key);
@@ -4660,11 +4613,10 @@ function activateTabShortcut(key) {
   const tabs = {
     "1": "dashboard",
     "2": "picking",
-    "3": "gold",
-    "4": "shortage",
-    "5": "inspection",
-    "6": "cs",
-    "7": "completed",
+    "3": "shortage",
+    "4": "inspection",
+    "5": "cs",
+    "6": "completed",
   };
   if (!tabs[key]) return false;
   setActiveTab(tabs[key]);
@@ -4771,11 +4723,6 @@ function bindEvents() {
     renderInspectionPanels();
     renderSideShortcuts();
   });
-  els.inspectionPanel?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-inspection-export]");
-    if (!button) return;
-    if (button.dataset.inspectionExport === "gold-label") exportGoldLabelXlsx().catch(showError);
-  });
   els.inspectionSearchInput?.addEventListener("input", () => {
     state.inspectionSearchText = els.inspectionSearchInput.value;
     state.selectedInspectionGroup = "";
@@ -4846,6 +4793,9 @@ function bindEvents() {
     if (button.dataset.dashboardAction === "planned-print-csv") {
       exportPlannedPrintCsv();
     }
+    if (button.dataset.dashboardAction === "gold-label") {
+      exportGoldLabelXlsx().catch(showError);
+    }
     if (button.dataset.dashboardAction === "alimtalk-csv") {
       exportAlimtalkCsv();
     }
@@ -4867,7 +4817,7 @@ function bindEvents() {
     if (!button) return;
     state.currentGroup = Number(button.dataset.group);
     renderGroups();
-    if (["picking", "gold"].includes(state.activeTab)) {
+    if (state.activeTab === "picking") {
       renderOrderList();
       renderTray();
     }

@@ -673,7 +673,7 @@ input {
 }
 
 .dashboard-overview,
-.dashboard-chart,
+.dashboard-donut-grid,
 .dashboard-card {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -698,8 +698,7 @@ input {
   align-content: center;
 }
 
-.dashboard-overview span,
-.chart-head span {
+.dashboard-overview span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
@@ -718,60 +717,103 @@ input {
   font-weight: 900;
 }
 
-.dashboard-chart {
+.dashboard-donut-grid {
   padding: 10px;
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 9px;
 }
 
-.dashboard-chart-row {
+.dashboard-donut-card {
+  min-width: 0;
+  border: 1px solid #dbe4f0;
+  border-radius: 7px;
+  background: #f8fafc;
   display: grid;
-  gap: 5px;
-}
-
-.chart-head {
-  display: flex;
+  grid-template-columns: 66px minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  padding: 8px;
 }
 
-.chart-head strong {
-  font-size: 12px;
+.dashboard-donut {
+  --donut-color: var(--blue);
+  --pct: 0%;
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  background: conic-gradient(var(--donut-color) var(--pct), #e5eaf2 0);
+  display: grid;
+  place-items: center;
+  position: relative;
+  color: #111827;
+}
+
+.dashboard-donut::before {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border-radius: inherit;
+  background: #ffffff;
+}
+
+.dashboard-donut strong,
+.dashboard-donut span {
+  position: relative;
+  z-index: 1;
+  line-height: 1;
+}
+
+.dashboard-donut strong {
+  font-size: 15px;
   font-weight: 1000;
 }
 
-.chart-track {
-  height: 12px;
-  border-radius: 999px;
-  background: #e5eaf2;
-  overflow: hidden;
+.dashboard-donut span {
+  margin-left: 16px;
+  margin-top: -14px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
 }
 
-.chart-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--blue);
+.dashboard-donut-card.good .dashboard-donut {
+  --donut-color: var(--green);
 }
 
-.dashboard-chart-row.good .chart-fill {
-  background: var(--green);
+.dashboard-donut-card.danger .dashboard-donut {
+  --donut-color: var(--red);
 }
 
-.dashboard-chart-row.danger .chart-fill {
-  background: var(--red);
+.dashboard-donut-card.warn .dashboard-donut {
+  --donut-color: var(--amber);
 }
 
-.dashboard-chart-row.warn .chart-fill {
-  background: var(--amber);
+.dashboard-donut-card.muted .dashboard-donut {
+  --donut-color: #64748b;
 }
 
-.dashboard-chart-row.muted .chart-fill {
-  background: #64748b;
+.dashboard-donut-card.gold .dashboard-donut {
+  --donut-color: #d39a21;
 }
 
-.dashboard-chart-row.gold .chart-fill {
-  background: #d39a21;
+.dashboard-donut-text {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-donut-text span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.dashboard-donut-text strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 1000;
 }
 
 .workflow-dashboard {
@@ -905,50 +947,6 @@ input {
 
 .dashboard-workflow-card {
   grid-column: 1 / -1;
-}
-
-.dashboard-zone-card {
-  grid-column: 1 / -1;
-}
-
-.dashboard-zone-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
-}
-
-.dashboard-zone-list div {
-  min-height: 58px;
-  border: 1px solid #dbe4f0;
-  border-radius: 7px;
-  background: #f8fafc;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 2px;
-}
-
-.dashboard-zone-list div.warn {
-  border-color: #f2cf8d;
-  background: #fff7e8;
-}
-
-.dashboard-zone-list strong {
-  color: #111827;
-  font-size: 17px;
-  font-weight: 1000;
-}
-
-.dashboard-zone-list span,
-.dashboard-zone-list em {
-  color: var(--muted);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 900;
-}
-
-.dashboard-zone-list div.warn em {
-  color: var(--amber);
 }
 
 .dashboard-workflow-status {
