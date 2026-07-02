@@ -114,6 +114,15 @@ const state = {
   selectedShortageKey: "",
   shortageFilter: "all",
   shortageSearchText: "",
+  receivingLabel: {
+    only: false,
+    fileName: "",
+    productMap: new Map(),
+    ownCodeMap: new Map(),
+    rowCount: 0,
+    totalQty: 0,
+    error: "",
+  },
   selectedInspectionGroup: "",
   selectedCompletedGroup: "",
   completedDateMode: "receipt",
@@ -173,6 +182,9 @@ const els = {
   shortageDetail: document.getElementById("shortage-detail"),
   shortageFilterBar: document.getElementById("shortage-filter-bar"),
   shortageSearchInput: document.getElementById("shortage-search-input"),
+  shortageReceivingFile: document.getElementById("shortage-receiving-file"),
+  shortageReceivingOnly: document.getElementById("shortage-receiving-only"),
+  shortageReceivingStatus: document.getElementById("shortage-receiving-status"),
   inspectionListCount: document.getElementById("inspection-list-count"),
   inspectionListBody: document.getElementById("inspection-list-body"),
   inspectionDetail: document.getElementById("inspection-detail"),
@@ -241,6 +253,27 @@ function ownCodeCandidates(ownCode) {
   const compact = codeCompareKey(raw);
   const withoutPrefixCompact = codeCompareKey(withoutPrefix);
   return [...new Set([raw, withoutPrefix, noBrackets, compact, withoutPrefixCompact].filter(Boolean))];
+}
+
+function receivingProductCodeKey(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
+function receivingOwnCodeKeys(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  const withoutPrefix = raw.replace(/^\[[^\]]+\]\s*/, "").trim();
+  const withoutTrailingLabel = withoutPrefix.replace(/\]\s*\d+$/g, "").trim();
+  return [...new Set([raw, withoutPrefix, withoutTrailingLabel, ...ownCodeCandidates(raw)].map(codeCompareKey).filter(Boolean))];
+}
+
+function numberFromCell(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const number = Number(String(value).replace(/,/g, "").trim());
+  return Number.isFinite(number) ? number : 0;
 }
 
 function onlyDigits(value) {
@@ -1660,6 +1693,140 @@ function repickedShortageRows() {
   });
 }
 
+function resetReceivingLabel(error = "") {
+  state.receivingLabel.fileName = "";
+  state.receivingLabel.productMap = new Map();
+  state.receivingLabel.ownCodeMap = new Map();
+  state.receivingLabel.rowCount = 0;
+  state.receivingLabel.totalQty = 0;
+  state.receivingLabel.error = error;
+}
+
+function addReceivingEntry(entry) {
+  if (!entry?.productCode) return;
+  const productKey = receivingProductCodeKey(entry.productCode);
+  if (!productKey) return;
+  const productMap = state.receivingLabel.productMap;
+  const current = productMap.get(productKey) || {
+    productCode: entry.productCode,
+    optionName: entry.optionName || "",
+    ownCode: entry.ownCode || "",
+    qty: 0,
+    rows: 0,
+  };
+  current.qty += Number(entry.qty || 0);
+  current.rows += 1;
+  if (!current.optionName && entry.optionName) current.optionName = entry.optionName;
+  if (!current.ownCode && entry.ownCode) current.ownCode = entry.ownCode;
+  productMap.set(productKey, current);
+
+  for (const ownKey of receivingOwnCodeKeys(entry.ownCode)) {
+    if (!state.receivingLabel.ownCodeMap.has(ownKey)) state.receivingLabel.ownCodeMap.set(ownKey, current);
+  }
+}
+
+function receivingColumnIndex(headers, names) {
+  const normalized = headers.map((value) => String(value || "").replace(/\s+/g, "").trim());
+  return normalized.findIndex((header) => names.some((name) => header === name));
+}
+
+function parseReceivingRows(sheetRows = []) {
+  const headerIndex = sheetRows.findIndex((row) => {
+    const text = (row || []).map((cell) => String(cell || "").replace(/\s+/g, "").trim());
+    return text.includes("상품코드") && text.includes("입고");
+  });
+  if (headerIndex < 0) throw new Error("라벨지에서 상품코드/입고 헤더를 찾지 못했습니다.");
+
+  const headers = sheetRows[headerIndex] || [];
+  const productIndex = receivingColumnIndex(headers, ["상품코드", "상품CODE", "상품코드"]);
+  const optionIndex = receivingColumnIndex(headers, ["옵션명", "옵션"]);
+  const qtyIndex = receivingColumnIndex(headers, ["입고", "입고수량", "수량"]);
+  const ownIndex = receivingColumnIndex(headers, ["자사코드", "자사상품코드"]);
+  if (productIndex < 0 || qtyIndex < 0) throw new Error("라벨지 필수 컬럼이 부족합니다.");
+
+  return sheetRows.slice(headerIndex + 1).flatMap((row) => {
+    const productCode = String(row?.[productIndex] || "").trim();
+    if (!productCode) return [];
+    return [
+      {
+        productCode,
+        optionName: String(row?.[optionIndex] || "").trim(),
+        qty: numberFromCell(row?.[qtyIndex]),
+        ownCode: String(row?.[ownIndex] || "").trim(),
+      },
+    ];
+  });
+}
+
+async function loadReceivingLabelFile(file) {
+  if (!file) return;
+  if (!window.XLSX) {
+    resetReceivingLabel("XLSX 로드 실패");
+    toast("XLSX 라이브러리 로드 실패");
+    renderShortagePanels();
+    return;
+  }
+  try {
+    const buffer = await file.arrayBuffer();
+    const workbook = window.XLSX.read(new Uint8Array(buffer), { type: "array" });
+    const firstSheetName = workbook.SheetNames?.[0];
+    if (!firstSheetName) throw new Error("시트를 찾지 못했습니다.");
+    const sheetRows = window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { header: 1, raw: false, defval: "" });
+    const entries = parseReceivingRows(sheetRows);
+    resetReceivingLabel();
+    state.receivingLabel.fileName = file.name || "";
+    for (const entry of entries) {
+      addReceivingEntry(entry);
+      state.receivingLabel.totalQty += Number(entry.qty || 0);
+    }
+    state.receivingLabel.rowCount = state.receivingLabel.productMap.size;
+    toast(`입고 라벨 ${state.receivingLabel.rowCount}종 불러옴`);
+  } catch (error) {
+    resetReceivingLabel(error?.message || "라벨지 읽기 실패");
+    toast(`입고 라벨 읽기 실패: ${state.receivingLabel.error}`);
+  }
+  state.selectedShortageKey = "";
+  renderShortagePanels();
+  renderSideShortcuts();
+}
+
+function receivingLabelEntryForItem(item = {}) {
+  const productKey = receivingProductCodeKey(item.sellpiaProductCode || item.raw?.p_code || item.raw?.sellpia_p_code);
+  if (productKey && state.receivingLabel.productMap.has(productKey)) return state.receivingLabel.productMap.get(productKey);
+  for (const ownKey of receivingOwnCodeKeys(item.ownCode || item.raw?.prod_code || item.raw?.p_dpcode)) {
+    if (state.receivingLabel.ownCodeMap.has(ownKey)) return state.receivingLabel.ownCodeMap.get(ownKey);
+  }
+  return null;
+}
+
+function shortageRowReceivingEntry(row) {
+  return receivingLabelEntryForItem(row?.item || {});
+}
+
+function shortageRowMatchesReceiving(row) {
+  if (!state.receivingLabel.only) return true;
+  return Boolean(shortageRowReceivingEntry(row));
+}
+
+function updateShortageReceivingStatus(openRows = []) {
+  if (els.shortageReceivingOnly && els.shortageReceivingOnly.checked !== state.receivingLabel.only) {
+    els.shortageReceivingOnly.checked = state.receivingLabel.only;
+  }
+  if (!els.shortageReceivingStatus) return;
+  if (state.receivingLabel.error) {
+    els.shortageReceivingStatus.textContent = state.receivingLabel.error;
+    els.shortageReceivingStatus.classList.add("warn");
+    return;
+  }
+  els.shortageReceivingStatus.classList.remove("warn");
+  if (!state.receivingLabel.rowCount) {
+    els.shortageReceivingStatus.textContent = "라벨 없음";
+    return;
+  }
+  const matched = openRows.filter(shortageRowReceivingEntry).length;
+  els.shortageReceivingStatus.textContent = `입고 ${state.receivingLabel.rowCount}종 · 미송 ${matched}건`;
+}
+
 function drawerMemoForShortageRow(row) {
   return String(row?.state?.drawerMemo || row?.item?.pickingState?.drawerMemo || row?.invoice?.sellpiaMemo1 || "").trim();
 }
@@ -1705,7 +1872,7 @@ function shortageRowsForCurrentFilter() {
         visibleInvoiceSequenceNo(a.invoice) - visibleInvoiceSequenceNo(b.invoice),
     );
   }
-  return rows.filter(shortageRowMatchesSearch);
+  return rows.filter(shortageRowMatchesReceiving).filter(shortageRowMatchesSearch);
 }
 
 function shortageRowOwnCode(row) {
@@ -1729,13 +1896,15 @@ function renderShortageRow({ invoice, item, state: itemState, completed }) {
   const orderNo = itemOrderNo(item, invoiceItemIndex(invoice, item));
   const receiptDate = String(invoice.receiptDate || "").slice(0, 10);
   const invoiceSeq = visibleInvoiceSequenceLabel(invoice);
-  return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""} ${completed ? "is-completed" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
+  const receiving = receivingLabelEntryForItem(item);
+  return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""} ${completed ? "is-completed" : ""} ${receiving ? "has-receiving" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
     <span class="workflow-row-code">${escapeHtml(item.ownCode || "-")}</span>
     <span class="workflow-row-main">
       <strong>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</strong>
       <span class="workflow-row-order">상품순서 ${orderNo}번</span>
       <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · 송장 ${escapeHtml(invoiceSeq)}</small>
       ${receiptDate ? `<small class="workflow-row-receipt">접수 ${escapeHtml(receiptDate)}</small>` : ""}
+      ${receiving ? `<small class="receiving-row-note">입고 ${escapeHtml(receiving.qty || "-")}개</small>` : ""}
     </span>
     <span class="workflow-row-badge ${completed ? "done" : "danger"}">${completed ? "피킹완료" : `미송 ${Number(itemState?.shortageQty || 0) || 1}`}</span>
   </button>`;
@@ -1762,8 +1931,10 @@ function renderShortageRows(rows) {
 function renderShortagePanels() {
   const rows = shortageRowsForCurrentFilter();
   const openCount = state.workflowQueues?.shortageItems?.length || 0;
+  const openRows = state.workflowQueues?.shortageItems || [];
   const completedCount = repickedShortageRows().length;
   const codeGroupCount = state.shortageFilter === "code" ? shortageGroupStats(rows).length : 0;
+  updateShortageReceivingStatus(openRows);
   if (els.shortageSearchInput && els.shortageSearchInput.value !== state.shortageSearchText) {
     els.shortageSearchInput.value = state.shortageSearchText;
   }
@@ -1792,7 +1963,13 @@ function renderShortagePanels() {
   }
 
   if (!rows.length) {
-    const emptyMessage = state.shortageSearchText.trim() ? "검색 결과가 없습니다." : `${shortageFilterLabel()} 대상이 없습니다.`;
+    const emptyMessage = state.receivingLabel.only && !state.receivingLabel.rowCount
+      ? "입고 라벨지를 먼저 불러오세요."
+      : state.receivingLabel.only
+        ? "입고 라벨과 일치하는 미송 대상이 없습니다."
+        : state.shortageSearchText.trim()
+          ? "검색 결과가 없습니다."
+          : `${shortageFilterLabel()} 대상이 없습니다.`;
     renderWorkflowEmpty(els.shortageListBody, emptyMessage);
     renderWorkflowEmpty(els.shortageDetail, emptyMessage);
     return;
@@ -1810,6 +1987,7 @@ function renderShortagePanels() {
   const repickDisabled = allowWorkflowEvents ? "" : "disabled";
   const selectedKey = workflowItemKey(selected.invoice, selected.item);
   const selectedCompleted = Boolean(selected.completed);
+  const receiving = receivingLabelEntryForItem(selected.item);
   const primaryAction = selectedCompleted
     ? `<button class="btn" data-action="shortage-repick-reopen" data-order-group="${escapeHtml(selected.invoice.orderGroupNo)}" data-item-no="${escapeHtml(selected.item.sellpiaItemNo)}" type="button" ${repickDisabled}>완료취소</button>`
     : `<button class="btn primary" data-action="shortage-repicked" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>피킹완료</button>`;
@@ -1833,6 +2011,7 @@ function renderShortagePanels() {
           <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, invoiceItemIndex(selected.invoice, selected.item))}번</dd></div>
           <div><dt>송장순서</dt><dd>${escapeHtml(invoiceSequenceWithGroupLabel(selected.invoice))}</dd></div>
           <div><dt>부족수량</dt><dd>${shortageQtyInput(selected.invoice, selected.item, selectedCompleted ? previousShortageQuantity(selected.invoice, selected.item) : Number(selectedState?.shortageQty || 0) || 1, "workflow-number-input")}</dd></div>
+          ${receiving ? `<div><dt>입고라벨</dt><dd>${escapeHtml(`입고 ${receiving.qty || "-"}개`)}${receiving.optionName ? `<small>${escapeHtml(receiving.optionName)}</small>` : ""}</dd></div>` : ""}
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>
           <div><dt>마지막 이벤트</dt><dd>${escapeHtml(formatShortDate(selectedState?.lastEventAt))}</dd></div>
         </dl>
@@ -4600,6 +4779,16 @@ function bindEvents() {
   });
   els.shortageSearchInput?.addEventListener("input", () => {
     state.shortageSearchText = els.shortageSearchInput.value;
+    state.selectedShortageKey = "";
+    renderShortagePanels();
+    renderSideShortcuts();
+  });
+  els.shortageReceivingFile?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    loadReceivingLabelFile(file).catch(showError);
+  });
+  els.shortageReceivingOnly?.addEventListener("change", () => {
+    state.receivingLabel.only = Boolean(els.shortageReceivingOnly.checked);
     state.selectedShortageKey = "";
     renderShortagePanels();
     renderSideShortcuts();
