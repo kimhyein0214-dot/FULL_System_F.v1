@@ -59,6 +59,29 @@ const CS_TEMPLATE_PRESETS = {
       "[#{SHOPNAME}/부분 출고 안내]\n\n안녕하세요, #{NAME} 고객님!\n주문해 주신 상품 중, 제작 주문이 들어간 제품 이외에 준비된 제품만 내일 우선적으로 부분출고될 예정입니다.\n(주말의 경우 차주 월요일 출고)\n\n●현재 제작중인 14K 제품\n#{PRODUCT}(#{OPTION})\n※ 안내가 없는 제품은 준비완료 제품으로, 익일 부분출고됩니다.\n※ 안내된 제품은 제작이 완료되는 대로 추가출고됩니다.\n\n더욱 나은 서비스를 위해 노력하겠습니다. 감사합니다!",
   },
 };
+const CS_DAYS = [
+  { key: "all", label: "전체" },
+  { key: "내일출고", label: "내일출고" },
+  { key: "1일차", label: "1일차 기본" },
+  { key: "3일차 메이크샵", label: "3일차 메이크샵" },
+  { key: "3일차 플랫폼", label: "3일차 플랫폼" },
+  { key: "5일차 부분출고", label: "5일차 부분출고" },
+  { key: "5일차 취소출고", label: "5일차 취소출고" },
+  { key: "10일차", label: "10일차 잔여취소" },
+  { key: "14K 1일차", label: "14K 1일차" },
+  { key: "14K 5일차", label: "14K 5일차 부분출고" },
+];
+const CS_DAY_TEMPLATE = {
+  내일출고: "d0",
+  "1일차": "d1",
+  "3일차 메이크샵": "d3_ms",
+  "3일차 플랫폼": "d3_pf",
+  "5일차 부분출고": "d5_hi",
+  "5일차 취소출고": "d5_lo",
+  "10일차": "d10",
+  "14K 1일차": "14k_1",
+  "14K 5일차": "14k_5",
+};
 
 const params = new URLSearchParams(location.search);
 const allowWrites = params.get("write") === "1";
@@ -2023,14 +2046,69 @@ function daysSinceDateKey(key) {
   return Math.max(0, Math.floor((today.getTime() - start.getTime()) / 86400000));
 }
 
+function csMethodText(invoice, item) {
+  return firstRawText(
+    invoice?.raw,
+    "method",
+    "delay_method",
+    "long_delay_method",
+    "cs_method",
+    "process_method",
+    "처리방법",
+    "장기지연처리방법",
+  ) || firstRawText(item?.raw, "method", "delay_method", "long_delay_method", "cs_method", "process_method", "처리방법", "장기지연처리방법");
+}
+
+function isCsMakeshopMethod(row) {
+  const method = String(row.csMethod || "").trim();
+  if (method) return true;
+  return sellerBadgeMeta(row.invoice.seller)?.className === "seller-makeshop";
+}
+
+function classifyCsRowsByDay(rows) {
+  const groups = Object.fromEntries(CS_DAYS.filter((day) => day.key !== "all").map((day) => [day.key, []]));
+  const invoiceRows = new Map();
+  rows.forEach((row) => {
+    const key = row.invoice.orderGroupNo || row.invoice.invoiceNo || row.key;
+    if (!invoiceRows.has(key)) invoiceRows.set(key, []);
+    invoiceRows.get(key).push(row);
+  });
+  rows.forEach((row) => {
+    const key = row.invoice.orderGroupNo || row.invoice.invoiceNo || row.key;
+    const sameInvoiceRows = invoiceRows.get(key) || [];
+    const allReady = sameInvoiceRows.length > 0 && sameInvoiceRows.every((item) => Number(item.currentShortageQty || 0) === 0);
+    const elapsed = Number(row.elapsedDays || 0);
+    const push = (dayKey) => groups[dayKey]?.push({ ...row, csDayKey: dayKey });
+    if (allReady) {
+      push("내일출고");
+      return;
+    }
+    if (isGoldItem(row.item)) {
+      push(elapsed >= 5 ? "14K 5일차" : "14K 1일차");
+      return;
+    }
+    if (elapsed >= 10) push("10일차");
+    else if (elapsed >= 5) {
+      push("5일차 부분출고");
+      push("5일차 취소출고");
+    } else if (elapsed >= 3) push(isCsMakeshopMethod(row) ? "3일차 메이크샵" : "3일차 플랫폼");
+    else push("1일차");
+  });
+  return groups;
+}
+
+function csDayLabel(key) {
+  return CS_DAYS.find((day) => day.key === key)?.label || key || "전체";
+}
+
+function defaultCsDayKey(row) {
+  const byDay = classifyCsRowsByDay([row]);
+  return CS_DAYS.find((day) => day.key !== "all" && byDay[day.key]?.length)?.key || "";
+}
+
 function recommendedCsTemplateKey(row) {
-  const gold = isGoldItem(row.item);
-  const elapsed = row.elapsedDays;
-  if (gold) return elapsed >= 5 ? "14k_5" : "14k_1";
-  if (elapsed >= 10) return "d10";
-  if (elapsed >= 5) return "d5_hi";
-  if (elapsed >= 3) return sellerBadgeMeta(row.invoice.seller)?.className === "seller-makeshop" ? "d3_ms" : "d3_pf";
-  return "d1";
+  const dayKey = row.csDayKey || defaultCsDayKey(row);
+  return CS_DAY_TEMPLATE[dayKey] || (isGoldItem(row.item) ? "14k_1" : "d1");
 }
 
 function buildCsMessage(row) {
@@ -2061,19 +2139,32 @@ function allCsRows() {
         item,
         state: itemState,
         shortageQty: qty || previousShortageQuantity(invoice, item) || 1,
+        currentShortageQty: qty,
         shortageDate: date,
         elapsedDays: daysSinceDateKey(date),
+        csMethod: csMethodText(invoice, item),
         localStatus: state.csLocalStatus[csRowKey(invoice, item)] || "open",
       });
     }
   }
-  return rows.sort((a, b) => String(b.shortageDate).localeCompare(String(a.shortageDate)) || visibleInvoiceSequenceNo(a.invoice) - visibleInvoiceSequenceNo(b.invoice));
+  const byDay = classifyCsRowsByDay(rows);
+  const defaultDayByKey = new Map();
+  CS_DAYS.filter((day) => day.key !== "all").forEach((day) => {
+    (byDay[day.key] || []).forEach((row) => {
+      if (!defaultDayByKey.has(row.key)) defaultDayByKey.set(row.key, day.key);
+    });
+  });
+  return rows
+    .map((row) => ({ ...row, csDayKey: defaultDayByKey.get(row.key) || defaultCsDayKey(row) }))
+    .sort((a, b) => String(b.shortageDate).localeCompare(String(a.shortageDate)) || visibleInvoiceSequenceNo(a.invoice) - visibleInvoiceSequenceNo(b.invoice));
 }
 
 function filteredCsRows() {
   const search = state.csSearchText.trim().toLowerCase();
-  return allCsRows().filter((row) => {
-    if (state.csDateFilter !== "all" && row.shortageDate !== state.csDateFilter) return false;
+  const allRows = allCsRows();
+  const byDay = classifyCsRowsByDay(allRows);
+  const sourceRows = state.csDateFilter === "all" ? allRows : byDay[state.csDateFilter] || [];
+  return sourceRows.filter((row) => {
     if (state.csStatusFilter !== "all" && row.localStatus !== state.csStatusFilter) return false;
     if (!search) return true;
     return [
@@ -2108,11 +2199,11 @@ function renderCsPanels() {
   }
 
   const allRows = allCsRows();
-  const dates = [...new Set(allRows.map((row) => row.shortageDate).filter(Boolean))];
-  if (state.csDateFilter !== "all" && !dates.includes(state.csDateFilter)) state.csDateFilter = "all";
-  const dateButtons = [["all", `전체 ${allRows.length}`], ...dates.map((date) => [date, `${date.slice(5)} ${allRows.filter((row) => row.shortageDate === date).length}`])];
+  const byDay = classifyCsRowsByDay(allRows);
+  if (state.csDateFilter !== "all" && !CS_DAYS.some((day) => day.key === state.csDateFilter)) state.csDateFilter = "all";
+  const dayButtons = CS_DAYS.map((day) => [day.key, `${day.label} ${day.key === "all" ? allRows.length : byDay[day.key]?.length || 0}`]);
   if (els.csDateTabs) {
-    els.csDateTabs.innerHTML = dateButtons
+    els.csDateTabs.innerHTML = dayButtons
       .map(([value, label]) => `<button class="filter-chip ${state.csDateFilter === value ? "active" : ""}" data-cs-date="${escapeHtml(value)}" type="button">${escapeHtml(label)}</button>`)
       .join("");
   }
@@ -2132,7 +2223,7 @@ function renderCsPanels() {
   if (els.csListCount) els.csListCount.textContent = `${rows.length}건 / 전체 ${allRows.length}건`;
   if (!rows.length) {
     renderWorkflowEmpty(els.csListBody, "현재 조건에 맞는 CS 대상이 없습니다.");
-    renderWorkflowEmpty(els.csDetail, "미송 발생일/상태 필터를 조정해보세요.");
+    renderWorkflowEmpty(els.csDetail, "일차/상태 필터를 조정해보세요.");
     return;
   }
   if (!rows.some((row) => row.key === state.selectedCsKey)) state.selectedCsKey = rows[0].key;
@@ -2144,12 +2235,12 @@ function renderCsPanels() {
       return `<button class="workflow-row ${selected ? "selected" : ""}" data-cs-key="${escapeHtml(row.key)}" type="button">
         <span class="workflow-row-code seq-with-slot">
           <strong>${escapeHtml(visibleInvoiceSequenceLabel(row.invoice))}</strong>
-          <small>${escapeHtml(row.shortageDate.slice(5))}</small>
+          <small>${escapeHtml(csDayLabel(row.csDayKey || defaultCsDayKey(row)))}</small>
         </span>
         <span class="workflow-row-main">
           <strong>${escapeHtml(row.invoice.displayName || row.invoice.csDisplayName || "-")}</strong>
           <small>${escapeHtml(row.item.ownCode || "-")} · ${escapeHtml(option)} · 미송 ${row.shortageQty}</small>
-          <small>${row.elapsedDays}일 경과 · 서랍 ${escapeHtml(invoiceDrawerValue(row.invoice) || "-")}</small>
+          <small>${escapeHtml(row.shortageDate)} · ${row.elapsedDays}일 경과 · 서랍 ${escapeHtml(invoiceDrawerValue(row.invoice) || "-")}</small>
         </span>
         <span class="workflow-row-badges">
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
@@ -2168,7 +2259,7 @@ function renderCsPanels() {
     <div class="workflow-detail-head">
       <div>
         <strong>${escapeHtml(selected.invoice.displayName || selected.invoice.csDisplayName || "-")}</strong>
-        <span>${escapeHtml(selected.shortageDate)} · ${selected.elapsedDays}일 경과 · 미송 ${selected.shortageQty}</span>
+        <span>${escapeHtml(csDayLabel(selected.csDayKey || defaultCsDayKey(selected)))} · ${escapeHtml(selected.shortageDate)} · ${selected.elapsedDays}일 경과 · 미송 ${selected.shortageQty}</span>
       </div>
       <div class="workflow-detail-actions">
         <span class="invoice-badge">${escapeHtml(preset.label)}</span>
