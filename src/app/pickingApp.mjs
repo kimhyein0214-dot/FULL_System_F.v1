@@ -2976,6 +2976,77 @@ function exportPlannedPrintCsv() {
   toast(`출력대상 CSV ${rows.length - 1}건 다운로드`);
 }
 
+function compactFilenamePart(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[\\/:*?"<>|]/g, "");
+}
+
+function alimtalkPhone(invoice) {
+  return (
+    firstRawText(
+      invoice.raw,
+      "receiver_mobile",
+      "recipient_mobile",
+      "receiver_hp",
+      "recipient_hp",
+      "orderer_mobile",
+      "buyer_mobile",
+      "mobile",
+      "phone",
+    ) ||
+    invoice.recipientPhone ||
+    invoice.buyerPhone ||
+    invoiceReceiverMobile(invoice) ||
+    invoiceReceiverTel(invoice)
+  );
+}
+
+function alimtalkName(invoice) {
+  return invoice.recipientName || invoice.displayName || invoice.csDisplayName || invoice.buyerName || "";
+}
+
+function alimtalkProduct(item) {
+  return itemSellerProductName(item) || item.productName || item.ownCode || "";
+}
+
+function alimtalkOption(item) {
+  return itemSellerOptionName(item) || item.optionName || "";
+}
+
+function alimtalkRowsForDay(dayKey, rows) {
+  const header = dayKey === "내일출고" ? ["전화번호", "#{NAME}"] : ["전화번호", "#{NAME}", "#{PRODUCT}", "#{OPTION}"];
+  const body = rows.map((row) =>
+    dayKey === "내일출고"
+      ? [alimtalkPhone(row.invoice), alimtalkName(row.invoice)]
+      : [alimtalkPhone(row.invoice), alimtalkName(row.invoice), alimtalkProduct(row.item), alimtalkOption(row.item)],
+  );
+  return [header, ...body];
+}
+
+function exportAlimtalkCsv() {
+  const allRows = allCsRows();
+  if (!allRows.length) {
+    toast("알림톡 CSV 대상이 없습니다.");
+    return;
+  }
+  const byDay = classifyCsRowsByDay(allRows);
+  const timestamp = timestampForFilename();
+  let fileCount = 0;
+  let rowCount = 0;
+  CS_DAYS.filter((day) => day.key !== "all").forEach((day) => {
+    const rows = byDay[day.key] || [];
+    if (!rows.length) return;
+    const csvRows = alimtalkRowsForDay(day.key, rows);
+    const templateKey = CS_DAY_TEMPLATE[day.key] || day.key;
+    downloadCsv(`alimtalk_${compactFilenamePart(day.label)}_${templateKey}_${timestamp}.csv`, csvRows);
+    fileCount += 1;
+    rowCount += rows.length;
+  });
+  toast(fileCount ? `알림톡 CSV ${fileCount}개 · ${rowCount}건 다운로드` : "알림톡 CSV 대상이 없습니다.");
+}
+
 function invoiceReceiverTel(invoice) {
   return firstRawText(invoice.raw, "receiver_tel", "recipient_tel", "receiver_phone", "recipient_phone", "tel");
 }
@@ -4462,6 +4533,9 @@ function bindEvents() {
     }
     if (button.dataset.dashboardAction === "planned-print-csv") {
       exportPlannedPrintCsv();
+    }
+    if (button.dataset.dashboardAction === "alimtalk-csv") {
+      exportAlimtalkCsv();
     }
     if (button.dataset.dashboardAction === "postoffice-status") {
       showPostOfficeEnrichmentStatus();
