@@ -3031,8 +3031,8 @@ function rebuildWorkflowQueuesFromLocalEvents() {
   if (!state.workflowQueues) return;
   const viewModel = state.workflowQueues.viewModel || state.viewModel;
   const workflowState = buildWorkflowState({
-    itemEvents: state.workflowQueues.itemEvents || [],
-    invoiceEvents: state.workflowQueues.invoiceEvents || [],
+    itemEvents: [...(state.workflowQueues.syntheticEvents?.itemEvents || []), ...(state.workflowQueues.itemEvents || [])],
+    invoiceEvents: [...(state.workflowQueues.syntheticEvents?.invoiceEvents || []), ...(state.workflowQueues.invoiceEvents || [])],
   });
   state.workflowQueues.workflowState = workflowState;
   state.workflowQueues.shortageItems = openShortageItems(viewModel, workflowState);
