@@ -1757,6 +1757,10 @@ input {
   font-weight: 1000;
 }
 
+.option-change {
+  color: var(--red) !important;
+}
+
 .workflow-product-cell {
   color: #334155;
   font-size: 13px;
@@ -1777,6 +1781,37 @@ input {
 
 .workflow-shortage-cell {
   color: var(--red) !important;
+}
+
+.shortage-input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid #ef9a86;
+  border-radius: 7px;
+  background: #fffaf8;
+  color: var(--red);
+  font: inherit;
+  font-size: 20px;
+  font-weight: 1000;
+  text-align: center;
+  outline: none;
+}
+
+.shortage-input:focus {
+  border-color: #dc5f46;
+  box-shadow: 0 0 0 2px rgba(220, 95, 70, 0.14);
+}
+
+.shortage-input.compact {
+  height: 34px;
+  font-size: 15px;
+}
+
+.workflow-number-input {
+  max-width: 92px;
+  height: 32px;
+  font-size: 15px;
 }
 
 .inspection-memo-cell {
@@ -1815,6 +1850,28 @@ input {
 .inspection-memo-cell textarea[readonly] {
   cursor: not-allowed;
   opacity: 0.72;
+}
+
+.inspection-drawer-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.inspection-drawer-input {
+  width: min(340px, 100%);
+  height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 0 10px;
+  color: #1a2840;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .workflow-item-row b {
@@ -2456,6 +2513,105 @@ input {
 
 .bottom-tray.open.expanded {
   max-height: 46vh;
+}
+
+.cs-tools {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cs-tools .filter-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cs-layout {
+  grid-template-columns: minmax(320px, 0.34fr) minmax(0, 1fr);
+}
+
+.cs-status-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.cs-detail-card {
+  display: grid;
+  gap: 12px;
+  min-height: 100%;
+  background: #ffffff;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.cs-product-line {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.cs-product-line strong {
+  color: #1f3f94;
+  font-weight: 1000;
+}
+
+.cs-product-line span {
+  color: #1a2840;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.cs-product-line small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cs-status-actions,
+.cs-template-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cs-template-preview {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fffaf2;
+  color: #1a2840;
+  padding: 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.65;
+}
+
+.cs-template-tabs span {
+  border: 1px solid #d7e0ee;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #64748b;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.cs-template-tabs span.active {
+  border-color: #7ca7f8;
+  background: #edf4ff;
+  color: #1f3f94;
 }
 
 .tray-handle {

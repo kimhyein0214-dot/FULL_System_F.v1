@@ -1,11 +1,64 @@
 import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-seq-group2";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260702-inspection-memos1";
+import {
+  buildWorkflowState,
+  completedInvoicesForInspection,
+  openShortageItems,
+  repickedInvoicesForInspection,
+} from "../workflows/workflowEvents.mjs";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
 const SUPABASE_KEY = "sb_publishable_XVnKGJo66GZiYTq5Ivu8dA_SjBVvX0g";
 const IMAGE_SUPABASE_URL = "https://bpgvqmtsjgegnrdzmpep.supabase.co";
 const IMAGE_BUCKET = "product-images";
 const JO_SIZE = 4;
+const CS_TEMPLATE_PRESETS = {
+  d1: {
+    label: "1일차 기본",
+    text:
+      "[#{SHOPNAME}/입고지연 상품 안내]\n\n안녕하세요, #{NAME} 고객님!\n주문 상품 중 아래의 상품이 거래처 지연/불량 등의 사유로, 부득이하게 출고가 지연되고 있습니다. 이용에 불편을 드려 대단히 죄송합니다.\n\n●지연상품\n#{PRODUCT}(#{OPTION})\n※ 보통 1-2일내로 정상출고되며, 추가지연시 다시 연락드립니다.\n※ 안내가 없는 제품은 입고완료 제품입니다.\n※ 만약 빠른 출고를 위하여 해당 제품의 취소 / 옵션 변경을 희망하시는 경우, 핑크로켓 고객센터(카카오톡:핑크로켓) / 구매처 게시판 등으로 연락부탁드립니다!\n\n빠른 출고가 되도록 노력하겠습니다!",
+  },
+  d3_ms: {
+    label: "3일차 메이크샵",
+    text:
+      "[#{SHOPNAME}/지연상품 취소 및 출고 안내]\n\n안녕하세요, #{NAME} 고객님!\n안내드린 상품의 입고가 3 영업일 이상 경과되어,\n주문시에 선택하신 장기지연 처리 방법으로 취소/환불 후, 내일 준비된 제품만 출고될 예정입니다.\n(주말의 경우 차주 월요일 출고 / 단독상품 주문시 주문취소)\n정상 출고 도와드리지 못해 대단히 죄송합니다.\n\n●취소예정상품\n#{PRODUCT}(#{OPTION})\n※ 안내가 없는 제품은 입고완료 제품입니다.\n\n더욱 나은 서비스를 위해 노력하겠습니다. 감사합니다!",
+  },
+  d3_pf: {
+    label: "3일차 플랫폼",
+    text:
+      "[#{SHOPNAME}/입고지연 취소 및 출고 안내]\n\n안녕하세요, #{NAME} 고객님!\n안내드린 지연상품의 입고가 3 영업일 이상 지속되어, 장기지연이 예상되고 있습니다.\n이에 부득이하게 해당 제품을 취소처리 후, 내일 나머지 제품만 출고될 예정입니다.\n(주말의 경우 차주 월요일 출고 / 단독상품 주문시 주문취소)\n오래 기다려 주셨으나, 정상출고 도와드리지 못해 대단히 죄송합니다.\n\n●취소예정상품\n#{PRODUCT}(#{OPTION})\n※ 안내가 없는 제품은 입고완료 제품입니다.\n※ 만약 취소하지 않고, 입고시까지 기다리시기를 원하시는 경우, 다음날 9:30AM까지 핑크로켓 고객센터(카카오톡:핑크로켓) / 구매처 게시판 등으로 연락부탁드립니다.\n\n더욱 나은 서비스를 위해 노력하겠습니다. 감사합니다!",
+  },
+  d5_hi: {
+    label: "5일차 부분출고",
+    text:
+      "[#{SHOPNAME}/부분 출고 안내]\n\n안녕하세요, #{NAME} 고객님!\n안내드린 상품의 입고가 5 영업일 이상 경과되어, 장기지연이 예상되고 있습니다. 이에 부득이하게 내일 준비된 제품만 우선적으로 부분출고될 예정입니다.\n(주말의 경우 차주 월요일 출고)\n이용에 불편을 드려 대단히 죄송합니다.\n\n●지연상품\n#{PRODUCT}(#{OPTION})\n※ 안내가 없는 제품은 입고완료 제품으로, 익일 부분출고됩니다.\n※ 지연상품의 입고지연이 지속될 경우, 취소처리 될 수 있습니다.\n\n더욱 나은 서비스를 위해 노력하겠습니다. 감사합니다!",
+  },
+  d5_lo: {
+    label: "5일차 취소출고",
+    text:
+      "[#{SHOPNAME}/지연상품 취소 및 출고 안내]\n\n안녕하세요, #{NAME} 고객님!\n안내드린 상품의 입고가 5 영업일 이상 경과되어, 입고일이 불투명한 장기지연이 예상되고 있습니다. 이에 부득이하게 해당 제품을 취소처리 후, 내일 나머지 제품만 출고될 예정입니다.\n(주말의 경우 차주 월요일 출고 / 단독상품 주문시 주문취소)\n오래 기다려 주셨으나, 정상출고 도와드리지 못해 대단히 죄송합니다.\n\n●취소예정상품\n#{PRODUCT}(#{OPTION})\n※ 안내가 없는 제품은 입고완료 제품입니다.\n※ 만약 취소하지 않고, 입고시까지 기다리시기를 원하시는 경우, 다음날 9:30AM까지 핑크로켓 고객센터(카카오톡:핑크로켓) / 구매처 게시판 등으로 연락부탁드립니다. 이경우, 추후 입고지연이 지속될 경우, 취소처리 될 수 있습니다.\n\n더욱 나은 서비스를 위해 노력하겠습니다. 감사합니다!",
+  },
+  d10: {
+    label: "10일차 잔여취소",
+    text:
+      "[#{SHOPNAME}/지연상품 취소 안내]\n\n안녕하세요, #{NAME} 고객님!\n부분출고 후 지연상품의 입고를 꾸준히 체크하였으나, 현재 입고일이 불투명한 장기지연이 계속되고 있는 상태입니다. 이에 부득이하게 해당 제품을 취소처리 해드리고자 합니다.\n오래 기다려 주셨으나, 정상출고 도와드리지 못해 대단히 죄송합니다.\n\n●취소예정상품\n#{PRODUCT}(#{OPTION})\n\n더욱 나은 서비스를 위해 노력하겠습니다. 감사합니다!",
+  },
+  d0: {
+    label: "내일출고",
+    text:
+      "[#{SHOPNAME}/내일 출고 안내]\n\n안녕하세요, #{NAME} 고객님!\n주문하신 상품이 오늘 모두 준비가 완료되었습니다.\n꼼꼼히 검품/포장 후, 내일 출고하겠습니다.\n(주말의 경우 차주 월요일 출고)\n기다려주셔서 감사합니다! :)",
+  },
+  "14k_1": {
+    label: "14K 1일차",
+    text:
+      "[#{SHOPNAME}/14K제품 배송안내]\n\n안녕하세요, #{NAME} 고객님!\n주문하신 14K 제품이 현재 제작진행 중입니다!\n\n●현재 제작중인 14K 제품\n#{PRODUCT}(#{OPTION})\n※ 안내가 없는 제품은 입고완료된 제품입니다.\n※ 14K 제품은 주문 후 제작되는 방식입니다. (1-2주 소요 / 빠른 출고를 위한 선재고 보유품목 제외)\n※ 자세한 내용은 상세 공지 확인해주세요!\n\n빠른 출고가 되도록 노력하겠습니다!",
+  },
+  "14k_5": {
+    label: "14K 5일차 부분출고",
+    text:
+      "[#{SHOPNAME}/부분 출고 안내]\n\n안녕하세요, #{NAME} 고객님!\n주문해 주신 상품 중, 제작 주문이 들어간 제품 이외에 준비된 제품만 내일 우선적으로 부분출고될 예정입니다.\n(주말의 경우 차주 월요일 출고)\n\n●현재 제작중인 14K 제품\n#{PRODUCT}(#{OPTION})\n※ 안내가 없는 제품은 준비완료 제품으로, 익일 부분출고됩니다.\n※ 안내된 제품은 제작이 완료되는 대로 추가출고됩니다.\n\n더욱 나은 서비스를 위해 노력하겠습니다. 감사합니다!",
+  },
+};
 
 const params = new URLSearchParams(location.search);
 const allowWrites = params.get("write") === "1";
@@ -44,6 +97,11 @@ const state = {
   inspectionFilter: "all",
   inspectionHideCompleted: false,
   inspectionSearchText: "",
+  csDateFilter: "all",
+  csStatusFilter: "open",
+  csSearchText: "",
+  selectedCsKey: "",
+  csLocalStatus: {},
   sidebarCollapsed: false,
   workflowEventsReady: false,
   workflowEventsChecked: false,
@@ -84,6 +142,7 @@ const els = {
   dashboardPanel: document.getElementById("dashboard-panel"),
   shortagePanel: document.getElementById("shortage-panel"),
   inspectionPanel: document.getElementById("inspection-panel"),
+  csPanel: document.getElementById("cs-panel"),
   completedPanel: document.getElementById("completed-panel"),
   shortageListCount: document.getElementById("shortage-list-count"),
   shortageListBody: document.getElementById("shortage-list-body"),
@@ -93,6 +152,12 @@ const els = {
   inspectionListCount: document.getElementById("inspection-list-count"),
   inspectionListBody: document.getElementById("inspection-list-body"),
   inspectionDetail: document.getElementById("inspection-detail"),
+  csDateTabs: document.getElementById("cs-date-tabs"),
+  csStatusTabs: document.getElementById("cs-status-tabs"),
+  csSearchInput: document.getElementById("cs-search-input"),
+  csListCount: document.getElementById("cs-list-count"),
+  csListBody: document.getElementById("cs-list-body"),
+  csDetail: document.getElementById("cs-detail"),
   completedListCount: document.getElementById("completed-list-count"),
   completedListBody: document.getElementById("completed-list-body"),
   completedDetail: document.getElementById("completed-detail"),
@@ -191,6 +256,11 @@ function isPicked(item) {
 
 function shortageQty(item) {
   return Number(item.pickingState?.shortageQty || item.shortageState?.shortageQty || 0);
+}
+
+function normalizedShortageQty(value) {
+  const number = Number(String(value ?? "").replace(/[^\d]/g, ""));
+  return Number.isFinite(number) ? Math.max(0, number) : 0;
 }
 
 function isHold(item) {
@@ -297,6 +367,15 @@ function sortInvoices(invoices) {
   const rows = [...invoices];
   if (!state.workSortMode) return rows;
   return rows.sort(compareWorkInvoices);
+}
+
+function optionHasBarChange(item) {
+  const raw = `${item?.optionName || ""} ${item?.raw?.p_option || ""} ${item?.raw?.option_name || ""}`;
+  return /바\s*변경|바변경/i.test(raw);
+}
+
+function optionClass(item, base = "option") {
+  return [base, optionHasBarChange(item) ? "option-change" : ""].filter(Boolean).join(" ");
 }
 
 function orderedInvoicesForSystemSequence(invoices = []) {
@@ -1362,6 +1441,17 @@ function sideShortcutConfig() {
       ],
     };
   }
+  if (state.activeTab === "cs") {
+    return {
+      title: "CS 보기",
+      items: [
+        ["cs-status", "open", "처리전"],
+        ["cs-status", "contacted", "연락"],
+        ["cs-status", "done", "완료"],
+        ["cs-status", "all", "전체"],
+      ],
+    };
+  }
   if (state.activeTab === "completed") {
     return {
       title: "완료 기준",
@@ -1380,6 +1470,7 @@ function isSideShortcutActive(type, value) {
   if (type === "inspection") return state.inspectionFilter === value;
   if (type === "inspection-hide") return state.inspectionHideCompleted;
   if (type === "completed-date") return state.completedDateMode === value;
+  if (type === "cs-status") return state.csStatusFilter === value;
   return false;
 }
 
@@ -1433,6 +1524,12 @@ function applySideShortcut(type, value) {
     state.completedDateMode = value || "receipt";
     state.selectedCompletedGroup = "";
     renderCompletedPanels();
+    renderSideShortcuts();
+  }
+  if (type === "cs-status") {
+    state.csStatusFilter = value || "open";
+    state.selectedCsKey = "";
+    renderCsPanels();
     renderSideShortcuts();
   }
 }
@@ -1677,12 +1774,12 @@ function renderShortagePanels() {
     <div class="workflow-detail-main">
       <div class="workflow-photo">${productImageUrl(selected.item.sellpiaProductCode) ? `<img src="${productImageUrl(selected.item.sellpiaProductCode)}" alt="">` : "사진"}</div>
       <div class="workflow-detail-text">
-        <h3>${escapeHtml(cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-")}</h3>
+        <h3 class="${optionHasBarChange(selected.item) ? "option-change" : ""}">${escapeHtml(cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-")}</h3>
         <p>${escapeHtml(selected.item.productName || "")}</p>
         <dl>
           <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, invoiceItemIndex(selected.invoice, selected.item))}번</dd></div>
           <div><dt>송장순서</dt><dd>${escapeHtml(invoiceSequenceWithGroupLabel(selected.invoice))}</dd></div>
-          <div><dt>부족수량</dt><dd>${selectedCompleted ? previousShortageQuantity(selected.invoice, selected.item) : Number(selectedState?.shortageQty || 0) || 1}개</dd></div>
+          <div><dt>부족수량</dt><dd>${shortageQtyInput(selected.invoice, selected.item, selectedCompleted ? previousShortageQuantity(selected.invoice, selected.item) : Number(selectedState?.shortageQty || 0) || 1, "workflow-number-input")}</dd></div>
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>
           <div><dt>마지막 이벤트</dt><dd>${escapeHtml(formatShortDate(selectedState?.lastEventAt))}</dd></div>
         </dl>
@@ -1806,6 +1903,10 @@ function renderInspectionPanels() {
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
+        <label class="inspection-drawer-box">
+          <span>서랍번호</span>
+          <input class="drawer-input inspection-drawer-input" data-inspection-drawer data-order-group="${escapeHtml(selected.orderGroupNo)}" value="${escapeHtml(invoiceDrawerValue(selected))}" placeholder="서랍번호 / 메모">
+        </label>
       </div>
       <div class="inspection-actions">
         <span class="invoice-badge inspection-slot-badge">${escapeHtml(invoiceGroupSlotLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</span>
@@ -1841,13 +1942,13 @@ function renderInspectionPanels() {
           return `<div class="workflow-item-row ${rowClass}">
             <span class="workflow-seq-cell">${itemSequenceNo(item, index)}</span>
             <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
-            <em class="workflow-option-cell">${escapeHtml(option)}</em>
+            <em class="${optionClass(item, "workflow-option-cell")}">${escapeHtml(option)}</em>
             <b>${Number(item.quantity) || 1}</b>
             <strong class="workflow-product-cell">${escapeHtml(product)}</strong>
             <span class="workflow-amount-cell">${escapeHtml(formatAmount(item.itemSalesAmount))}</span>
             <strong class="workflow-code-cell">${escapeHtml(item.ownCode || "-")}</strong>
             <span class="workflow-sellpia-cell">${escapeHtml(item.sellpiaProductCode || "-")}</span>
-            <span class="workflow-shortage-cell">${shortage}</span>
+            ${shortageQtyInput(selected, item, shortage, "workflow-shortage-cell compact")}
             <label class="inspection-memo-cell ${sellpiaOrderMemo ? "has-value" : ""}">
               <textarea data-inspection-memo-field="sellpia-order" data-order-group="${escapeHtml(selected.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" rows="2" placeholder="셀피아 주문메모" ${memoReadonly}${memoHint}>${escapeHtml(sellpiaOrderMemo)}</textarea>
             </label>
@@ -1864,6 +1965,196 @@ function renderInspectionPanels() {
         .join("")}
     </div>
     ${invoiceState?.memo ? `<div class="workflow-note">${escapeHtml(invoiceState.memo)}</div>` : ""}`;
+}
+
+function csRowKey(invoice, item) {
+  return workflowItemKey(invoice, item);
+}
+
+function csShortageStartEvent(invoice, item) {
+  const key = csRowKey(invoice, item);
+  return [...(state.workflowQueues?.itemEvents || [])]
+    .filter((event) => `${event.order_group_no}::${event.sellpia_item_no}` === key && ["shortage_created", "shortage_qty_changed"].includes(event.event_type))
+    .sort((a, b) => workflowEventTime(a) - workflowEventTime(b))[0];
+}
+
+function daysSinceDateKey(key) {
+  if (!key) return 0;
+  const start = new Date(`${key}T00:00:00`);
+  const today = new Date(`${todayDateString()}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return 0;
+  return Math.max(0, Math.floor((today.getTime() - start.getTime()) / 86400000));
+}
+
+function recommendedCsTemplateKey(row) {
+  const gold = isGoldItem(row.item);
+  const elapsed = row.elapsedDays;
+  if (gold) return elapsed >= 5 ? "14k_5" : "14k_1";
+  if (elapsed >= 10) return "d10";
+  if (elapsed >= 5) return "d5_hi";
+  if (elapsed >= 3) return sellerBadgeMeta(row.invoice.seller)?.className === "seller-makeshop" ? "d3_ms" : "d3_pf";
+  return "d1";
+}
+
+function buildCsMessage(row) {
+  const option = cleanOptionName(row.item.optionName, row.item.ownCode) || row.item.productName || "-";
+  const product = row.item.productName || row.item.ownCode || "-";
+  const preset = CS_TEMPLATE_PRESETS[recommendedCsTemplateKey(row)] || CS_TEMPLATE_PRESETS.d1;
+  return preset.text
+    .replace(/#{SHOPNAME}/g, "핑크로켓")
+    .replace(/#{NAME}/g, row.invoice.displayName || row.invoice.csDisplayName || row.invoice.recipientName || "고객")
+    .replace(/#{PRODUCT}\(#{OPTION}\)/g, `${product}(${option})`)
+    .replace(/#{PRODUCT}/g, product)
+    .replace(/#{OPTION}/g, option);
+}
+
+function allCsRows() {
+  const invoices = state.workflowQueues?.viewModel?.invoices || state.viewModel?.invoices || [];
+  const rows = [];
+  for (const invoice of invoices) {
+    for (const item of invoice.items || []) {
+      const itemState = workflowItemState(invoice, item);
+      const qty = Number(itemState?.shortageQty || shortageQty(item) || 0);
+      const started = csShortageStartEvent(invoice, item);
+      if (!started && qty <= 0 && !itemState?.shortageRepicked) continue;
+      const date = dateKey(started?.event_at || started?.created_at || itemState?.lastEventAt || invoice.receiptDate || state.selectedDate);
+      rows.push({
+        key: csRowKey(invoice, item),
+        invoice,
+        item,
+        state: itemState,
+        shortageQty: qty || previousShortageQuantity(invoice, item) || 1,
+        shortageDate: date,
+        elapsedDays: daysSinceDateKey(date),
+        localStatus: state.csLocalStatus[csRowKey(invoice, item)] || "open",
+      });
+    }
+  }
+  return rows.sort((a, b) => String(b.shortageDate).localeCompare(String(a.shortageDate)) || visibleInvoiceSequenceNo(a.invoice) - visibleInvoiceSequenceNo(b.invoice));
+}
+
+function filteredCsRows() {
+  const search = state.csSearchText.trim().toLowerCase();
+  return allCsRows().filter((row) => {
+    if (state.csDateFilter !== "all" && row.shortageDate !== state.csDateFilter) return false;
+    if (state.csStatusFilter !== "all" && row.localStatus !== state.csStatusFilter) return false;
+    if (!search) return true;
+    return [
+      row.invoice.invoiceNo,
+      visibleInvoiceSequenceLabel(row.invoice),
+      row.invoice.displayName,
+      row.invoice.csDisplayName,
+      row.invoice.recipientName,
+      row.item.ownCode,
+      row.item.sellpiaProductCode,
+      row.item.productName,
+      row.item.optionName,
+      invoiceDrawerValue(row.invoice),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(search);
+  });
+}
+
+function renderCsPanels() {
+  if (els.csSearchInput && els.csSearchInput.value !== state.csSearchText) els.csSearchInput.value = state.csSearchText;
+  if (state.workflowQueueError) {
+    renderWorkflowEmpty(els.csListBody, state.workflowQueueError);
+    renderWorkflowEmpty(els.csDetail, "CS 대상 데이터를 불러오지 못했습니다.");
+    return;
+  }
+  if (!state.workflowQueues && !state.viewModel) {
+    renderWorkflowEmpty(els.csListBody, "미송 데이터를 불러오는 중입니다.");
+    renderWorkflowEmpty(els.csDetail, "연락 대상을 선택하면 템플릿을 표시합니다.");
+    return;
+  }
+
+  const allRows = allCsRows();
+  const dates = [...new Set(allRows.map((row) => row.shortageDate).filter(Boolean))];
+  if (state.csDateFilter !== "all" && !dates.includes(state.csDateFilter)) state.csDateFilter = "all";
+  const dateButtons = [["all", `전체 ${allRows.length}`], ...dates.map((date) => [date, `${date.slice(5)} ${allRows.filter((row) => row.shortageDate === date).length}`])];
+  if (els.csDateTabs) {
+    els.csDateTabs.innerHTML = dateButtons
+      .map(([value, label]) => `<button class="filter-chip ${state.csDateFilter === value ? "active" : ""}" data-cs-date="${escapeHtml(value)}" type="button">${escapeHtml(label)}</button>`)
+      .join("");
+  }
+  const statusButtons = [
+    ["open", `처리전 ${allRows.filter((row) => row.localStatus === "open").length}`],
+    ["contacted", `연락 ${allRows.filter((row) => row.localStatus === "contacted").length}`],
+    ["done", `완료 ${allRows.filter((row) => row.localStatus === "done").length}`],
+    ["all", "전체"],
+  ];
+  if (els.csStatusTabs) {
+    els.csStatusTabs.innerHTML = statusButtons
+      .map(([value, label]) => `<button class="filter-chip ${state.csStatusFilter === value ? "active" : ""}" data-cs-status="${escapeHtml(value)}" type="button">${escapeHtml(label)}</button>`)
+      .join("");
+  }
+
+  const rows = filteredCsRows();
+  if (els.csListCount) els.csListCount.textContent = `${rows.length}건 / 전체 ${allRows.length}건`;
+  if (!rows.length) {
+    renderWorkflowEmpty(els.csListBody, "현재 조건에 맞는 CS 대상이 없습니다.");
+    renderWorkflowEmpty(els.csDetail, "미송 발생일/상태 필터를 조정해보세요.");
+    return;
+  }
+  if (!rows.some((row) => row.key === state.selectedCsKey)) state.selectedCsKey = rows[0].key;
+  els.csListBody.innerHTML = rows
+    .map((row) => {
+      const selected = row.key === state.selectedCsKey;
+      const seller = sellerBadgeMeta(row.invoice.seller);
+      const option = cleanOptionName(row.item.optionName, row.item.ownCode) || row.item.productName || "-";
+      return `<button class="workflow-row ${selected ? "selected" : ""}" data-cs-key="${escapeHtml(row.key)}" type="button">
+        <span class="workflow-row-code seq-with-slot">
+          <strong>${escapeHtml(visibleInvoiceSequenceLabel(row.invoice))}</strong>
+          <small>${escapeHtml(row.shortageDate.slice(5))}</small>
+        </span>
+        <span class="workflow-row-main">
+          <strong>${escapeHtml(row.invoice.displayName || row.invoice.csDisplayName || "-")}</strong>
+          <small>${escapeHtml(row.item.ownCode || "-")} · ${escapeHtml(option)} · 미송 ${row.shortageQty}</small>
+          <small>${row.elapsedDays}일 경과 · 서랍 ${escapeHtml(invoiceDrawerValue(row.invoice) || "-")}</small>
+        </span>
+        <span class="workflow-row-badges">
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+          <span class="workflow-row-badge ${row.localStatus === "done" ? "done" : row.localStatus === "contacted" ? "warn" : "danger"}">${row.localStatus === "done" ? "완료" : row.localStatus === "contacted" ? "연락" : "처리전"}</span>
+        </span>
+      </button>`;
+    })
+    .join("");
+
+  const selected = rows.find((row) => row.key === state.selectedCsKey) || rows[0];
+  const presetKey = recommendedCsTemplateKey(selected);
+  const preset = CS_TEMPLATE_PRESETS[presetKey] || CS_TEMPLATE_PRESETS.d1;
+  const message = buildCsMessage(selected);
+  const option = cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-";
+  els.csDetail.innerHTML = `<div class="cs-detail-card">
+    <div class="workflow-detail-head">
+      <div>
+        <strong>${escapeHtml(selected.invoice.displayName || selected.invoice.csDisplayName || "-")}</strong>
+        <span>${escapeHtml(selected.shortageDate)} · ${selected.elapsedDays}일 경과 · 미송 ${selected.shortageQty}</span>
+      </div>
+      <div class="workflow-detail-actions">
+        <span class="invoice-badge">${escapeHtml(preset.label)}</span>
+        <button class="btn" data-cs-copy="${escapeHtml(selected.key)}" type="button">문구 복사</button>
+      </div>
+    </div>
+    <div class="cs-product-line">
+      <strong>${escapeHtml(selected.item.ownCode || "-")}</strong>
+      <span class="${optionHasBarChange(selected.item) ? "option-change" : ""}">${escapeHtml(option)}</span>
+      <small>송장 ${escapeHtml(selected.invoice.invoiceNo || "-")} · ${escapeHtml(invoiceSequenceWithGroupLabel(selected.invoice))}</small>
+    </div>
+    <div class="cs-status-actions">
+      <button class="filter-chip ${selected.localStatus === "open" ? "active" : ""}" data-cs-set-status="open" data-cs-key="${escapeHtml(selected.key)}" type="button">처리전</button>
+      <button class="filter-chip ${selected.localStatus === "contacted" ? "active" : ""}" data-cs-set-status="contacted" data-cs-key="${escapeHtml(selected.key)}" type="button">연락</button>
+      <button class="filter-chip ${selected.localStatus === "done" ? "active" : ""}" data-cs-set-status="done" data-cs-key="${escapeHtml(selected.key)}" type="button">완료</button>
+    </div>
+    <textarea class="cs-template-preview" readonly>${escapeHtml(message)}</textarea>
+    <div class="cs-template-tabs">
+      ${Object.entries(CS_TEMPLATE_PRESETS)
+        .map(([key, value]) => `<span class="${key === presetKey ? "active" : ""}">${escapeHtml(value.label)}</span>`)
+        .join("")}
+    </div>
+  </div>`;
 }
 
 function renderCompletedPanels() {
@@ -1943,7 +2234,7 @@ function renderCompletedPanels() {
             <span>${index + 1}</span>
             <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
             <strong>${escapeHtml(item.ownCode || "-")}</strong>
-            <em>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</em>
+            <em class="${optionHasBarChange(item) ? "option-change" : ""}">${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</em>
             <b>${Number(item.quantity) || 1}개</b>
             ${rowClass ? '<small>미송피킹 완료</small>' : "<small>전체상품</small>"}
           </div>`;
@@ -1987,7 +2278,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
           ${goldItem ? '<span class="gold-badge">골드</span>' : goldInvoice ? '<span class="gold-badge soft">골드송장</span>' : ""}
           ${item.sellpiaLocation ? `<span class="small-badge">${escapeHtml(item.sellpiaLocation)}</span>` : ""}
         </div>
-        <p class="option">${escapeHtml(option)}</p>
+        <p class="${optionClass(item)}">${escapeHtml(option)}</p>
         <p class="product">${escapeHtml(product)}</p>
         <div class="invoice-meta">
           <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
@@ -2000,7 +2291,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
         ${renderInvoiceSlots(invoiceIndex, item, itemIndex)}
         <div class="shortage-control">
           <button data-action="shortage" data-delta="-1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">−</button>
-          <div class="shortage-value">${shortage}</div>
+          ${shortageQtyInput(invoice, item, shortage)}
           <button data-action="shortage" data-delta="1" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">+</button>
         </div>
         <div class="drawer-box">
@@ -2027,6 +2318,7 @@ function renderShell() {
   if (els.dashboardPanel) els.dashboardPanel.hidden = state.activeTab !== "dashboard";
   if (els.shortagePanel) els.shortagePanel.hidden = state.activeTab !== "shortage";
   if (els.inspectionPanel) els.inspectionPanel.hidden = state.activeTab !== "inspection";
+  if (els.csPanel) els.csPanel.hidden = state.activeTab !== "cs";
   if (els.completedPanel) els.completedPanel.hidden = state.activeTab !== "completed";
   renderSideShortcuts();
 }
@@ -2050,6 +2342,10 @@ function renderActivePanel(options = {}) {
   }
   if (state.activeTab === "inspection") {
     renderInspectionPanels();
+    return;
+  }
+  if (state.activeTab === "cs") {
+    renderCsPanels();
     return;
   }
   if (state.activeTab === "completed") {
@@ -2101,11 +2397,12 @@ function renderWorkflowSurfaces() {
   renderDashboard();
   renderShortagePanels();
   renderInspectionPanels();
+  renderCsPanels();
   renderCompletedPanels();
 }
 
 function renderWorkflowSurfacesIfVisible() {
-  if (["dashboard", "shortage", "inspection", "completed"].includes(state.activeTab)) {
+  if (["dashboard", "shortage", "inspection", "cs", "completed"].includes(state.activeTab)) {
     renderWorkflowSurfaces();
     return;
   }
@@ -2113,7 +2410,13 @@ function renderWorkflowSurfacesIfVisible() {
 }
 
 function findInvoiceAndItem(orderGroupNo, sellpiaItemNo) {
-  const invoice = (state.viewModel?.invoices || []).find((row) => row.orderGroupNo === orderGroupNo);
+  const invoices = [
+    ...(state.viewModel?.invoices || []),
+    ...(state.workflowQueues?.viewModel?.invoices || []),
+    ...(state.workflowQueues?.inspectionInvoices || []),
+    ...(state.workflowQueues?.inspectionCompletedInvoices || []),
+  ];
+  const invoice = invoices.find((row) => row.orderGroupNo === orderGroupNo);
   const item = invoice?.items.find((row) => row.sellpiaItemNo === sellpiaItemNo);
   return { invoice, item };
 }
@@ -2156,6 +2459,8 @@ function paintPickingItemState(invoice, item) {
     }
     const shortageValue = card.querySelector(".shortage-value");
     if (shortageValue) shortageValue.textContent = String(shortage);
+    const shortageInput = card.querySelector(".shortage-input");
+    if (shortageInput && document.activeElement !== shortageInput) shortageInput.value = String(shortage);
   }
 
   const trayItem = els.trayBoard?.querySelector(`[data-tray-key="${itemSlotKey(invoice, item).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`);
@@ -2167,6 +2472,13 @@ function paintPickingItemState(invoice, item) {
     const stateNode = trayItem.querySelector(".tray-item-state");
     if (stateNode) stateNode.textContent = meta.label;
   }
+}
+
+function shortageEventType(prev, next) {
+  if (next > 0 && prev === 0) return "shortage_created";
+  if (next === 0 && prev > 0) return "shortage_repick_completed";
+  if (next !== prev) return "shortage_qty_changed";
+  return null;
 }
 
 function buildItemEvent(invoice, item, eventType, overrides = {}) {
@@ -2327,6 +2639,41 @@ async function saveDrawerForInvoice(invoice, drawerMemo) {
     patchLocalPickingState(invoice, item, { drawerMemo });
     await savePickingRow(invoice, item, null, { drawerMemo });
   }
+}
+
+async function setShortageQty(orderGroupNo, sellpiaItemNo, nextValue) {
+  const { invoice, item } = findInvoiceAndItem(orderGroupNo, sellpiaItemNo);
+  if (!invoice || !item) {
+    toast("부족수량 대상을 찾지 못했습니다.");
+    return;
+  }
+  const prev = shortageQty(item);
+  const next = normalizedShortageQty(nextValue);
+  if (prev === next) return;
+  const eventType = shortageEventType(prev, next);
+  patchLocalPickingState(invoice, item, { shortageQty: next });
+  paintPickingItemState(invoice, item);
+  schedulePickingSurfaces();
+  try {
+    await savePickingRow(invoice, item, eventType, { quantity: next });
+    renderWorkflowSurfacesIfVisible();
+    toast("부족수량 저장");
+  } catch (error) {
+    patchLocalPickingState(invoice, item, { shortageQty: prev });
+    render();
+    toast(`부족수량 저장 실패: ${error.message}`);
+  }
+}
+
+function onShortageInputChange(event) {
+  const input = event.target.closest("[data-shortage-input]");
+  if (!input) return;
+  input.value = String(normalizedShortageQty(input.value));
+  setShortageQty(input.dataset.orderGroup, input.dataset.itemNo, input.value).catch(showError);
+}
+
+function shortageQtyInput(invoice, item, value = shortageQty(item), extraClass = "") {
+  return `<input class="shortage-input ${extraClass}" data-shortage-input data-action="shortage-set" type="number" min="0" inputmode="numeric" value="${escapeHtml(normalizedShortageQty(value))}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" aria-label="부족수량">`;
 }
 
 function firstRawText(source, ...keys) {
@@ -3298,38 +3645,21 @@ async function onOrderListClick(event) {
     const delta = Number(target.dataset.delta || 0);
     const prev = shortageQty(item);
     const next = Math.max(0, prev + delta);
-    const eventType =
-      delta > 0 && prev === 0
-        ? "shortage_created"
-        : next === 0 && prev > 0
-          ? "shortage_repick_completed"
-          : next !== prev
-            ? "shortage_qty_changed"
-            : null;
-    patchLocalPickingState(invoice, item, { shortageQty: next });
-    paintPickingItemState(invoice, item);
-    schedulePickingSurfaces();
-    try {
-      await savePickingRow(invoice, item, eventType, { quantity: next });
-      toast("부족수량 저장");
-    } catch (error) {
-      patchLocalPickingState(invoice, item, { shortageQty: Math.max(0, next - delta) });
-      renderPickingSurfaces();
-      toast(`저장 실패: ${error.message}`);
-    }
+    await setShortageQty(orderGroupNo, sellpiaItemNo, next);
   }
 }
 
 function onDrawerChange(event) {
-  const input = event.target.closest("[data-action='drawer']");
+  const input = event.target.closest("[data-action='drawer'], [data-inspection-drawer]");
   if (!input) return;
-  const invoice = (state.viewModel?.invoices || []).find((row) => row.orderGroupNo === input.dataset.orderGroup);
+  const invoice = findInvoiceAndItem(input.dataset.orderGroup, "")?.invoice || (state.viewModel?.invoices || []).find((row) => row.orderGroupNo === input.dataset.orderGroup);
   if (!invoice) return;
   const value = input.value.trim();
   saveDrawerForInvoice(invoice, value)
     .then(() => {
       invoice.sellpiaMemo1 = value;
-      render();
+      if (input.matches("[data-inspection-drawer]")) renderInspectionPanels();
+      else render();
       toast("서랍번호 저장");
     })
     .catch((error) => toast(`서랍번호 저장 실패: ${error.message}`));
@@ -3591,7 +3921,7 @@ async function loadWorkflowData() {
 }
 
 function setActiveTab(tab) {
-  const allowedTabs = new Set(["dashboard", "picking", "gold", "shortage", "inspection", "completed"]);
+  const allowedTabs = new Set(["dashboard", "picking", "gold", "shortage", "inspection", "cs", "completed"]);
   state.activeTab = allowedTabs.has(tab) ? tab : "picking";
   if (state.activeTab === "gold") {
     state.filterMode = "gold";
@@ -3751,6 +4081,7 @@ function currentWorkflowRows() {
   if (state.activeTab === "inspection") {
     return inspectionSourceInvoices().filter(invoiceMatchesInspectionFilter).filter(invoiceMatchesInspectionSearch);
   }
+  if (state.activeTab === "cs") return filteredCsRows();
   if (state.activeTab === "completed") return completedInvoicesForSelectedDate();
   return [];
 }
@@ -3772,6 +4103,13 @@ function moveWorkflowSelection(delta) {
     renderInspectionPanels();
     return;
   }
+  if (state.activeTab === "cs") {
+    const keys = rows.map((row) => row.key);
+    const current = keys.indexOf(state.selectedCsKey);
+    state.selectedCsKey = keys[Math.max(0, Math.min(keys.length - 1, (current >= 0 ? current : 0) + delta))];
+    renderCsPanels();
+    return;
+  }
   if (state.activeTab === "completed") {
     const keys = rows.map((invoice) => invoice.orderGroupNo);
     const current = keys.indexOf(state.selectedCompletedGroup);
@@ -3781,7 +4119,7 @@ function moveWorkflowSelection(delta) {
 }
 
 function focusActiveSearch() {
-  const target = state.activeTab === "inspection" ? els.inspectionSearchInput : els.searchInput;
+  const target = state.activeTab === "inspection" ? els.inspectionSearchInput : state.activeTab === "cs" ? els.csSearchInput : els.searchInput;
   target?.focus();
   target?.select();
 }
@@ -3793,7 +4131,8 @@ function activateTabShortcut(key) {
     "3": "gold",
     "4": "shortage",
     "5": "inspection",
-    "6": "completed",
+    "6": "cs",
+    "7": "completed",
   };
   if (!tabs[key]) return false;
   setActiveTab(tabs[key]);
@@ -3817,7 +4156,7 @@ function onGlobalKeydown(event) {
   if ((event.key === "Tab" || event.key === "ArrowDown" || event.key === "ArrowUp") && !isTypingTarget(event.target)) {
     event.preventDefault();
     const delta = event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey) ? -1 : 1;
-    if (["shortage", "inspection", "completed"].includes(state.activeTab)) moveWorkflowSelection(delta);
+    if (["shortage", "inspection", "cs", "completed"].includes(state.activeTab)) moveWorkflowSelection(delta);
     else moveSelection(delta);
     return;
   }
@@ -3918,6 +4257,46 @@ function bindEvents() {
       }
     }
   });
+  els.csDateTabs?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cs-date]");
+    if (!button) return;
+    state.csDateFilter = button.dataset.csDate || "all";
+    state.selectedCsKey = "";
+    renderCsPanels();
+  });
+  els.csStatusTabs?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cs-status]");
+    if (!button) return;
+    state.csStatusFilter = button.dataset.csStatus || "open";
+    state.selectedCsKey = "";
+    renderCsPanels();
+    renderSideShortcuts();
+  });
+  els.csSearchInput?.addEventListener("input", () => {
+    state.csSearchText = els.csSearchInput.value;
+    state.selectedCsKey = "";
+    renderCsPanels();
+  });
+  els.csListBody?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cs-key]");
+    if (!button) return;
+    state.selectedCsKey = button.dataset.csKey;
+    renderCsPanels();
+  });
+  els.csDetail?.addEventListener("click", (event) => {
+    const copyButton = event.target.closest("[data-cs-copy]");
+    if (copyButton) {
+      const row = allCsRows().find((item) => item.key === copyButton.dataset.csCopy);
+      if (row && navigator.clipboard?.writeText) navigator.clipboard.writeText(buildCsMessage(row)).then(() => toast("CS 문구 복사"));
+      else toast("클립보드 복사를 지원하지 않는 브라우저입니다.");
+      return;
+    }
+    const statusButton = event.target.closest("[data-cs-set-status]");
+    if (!statusButton) return;
+    state.csLocalStatus[statusButton.dataset.csKey] = statusButton.dataset.csSetStatus || "open";
+    renderCsPanels();
+    renderSideShortcuts();
+  });
   els.dashboardSummary?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-dashboard-tab]");
     if (!button) return;
@@ -3980,6 +4359,7 @@ function bindEvents() {
     selectPickingCard(card.dataset.slotKey);
   });
   els.orderList.addEventListener("change", onDrawerChange);
+  els.orderList.addEventListener("change", onShortageInputChange);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.orderListModal.open) closeOrderListModal();
   });
@@ -4016,6 +4396,7 @@ function bindEvents() {
       reopenShortageRepick(button.dataset.orderGroup, button.dataset.itemNo).catch(showError);
     }
   });
+  els.shortageDetail?.addEventListener("change", onShortageInputChange);
   els.inspectionListBody?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-inspection-group]");
     if (!button) return;
@@ -4028,6 +4409,14 @@ function bindEvents() {
     field.closest(".inspection-memo-cell")?.classList.toggle("has-value", Boolean(field.value.trim()));
   });
   els.inspectionDetail?.addEventListener("change", (event) => {
+    if (event.target.closest("[data-shortage-input]")) {
+      onShortageInputChange(event);
+      return;
+    }
+    if (event.target.closest("[data-inspection-drawer]")) {
+      onDrawerChange(event);
+      return;
+    }
     const field = event.target.closest("[data-inspection-memo-field]");
     if (!field) return;
     const orderGroupNo = field.dataset.orderGroup || "";
