@@ -86,7 +86,7 @@ const CS_DAY_TEMPLATE = {
 const params = new URLSearchParams(location.search);
 const allowWrites = params.get("write") === "1";
 const allowOrderReorder = allowWrites && params.get("reorder") !== "0";
-const allowWorkflowEvents = allowWrites && params.get("events") === "1";
+const allowWorkflowEvents = allowWrites && params.get("events") !== "0";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 function todayDateString() {
@@ -2316,6 +2316,12 @@ function renderInspectionPanels(options = {}) {
     return itemState?.shortageRepicked && !itemState?.inspected && !itemState?.cancelled;
   }).length;
   const selectedIndex = invoices.findIndex((invoice) => invoice.orderGroupNo === selected.orderGroupNo);
+  const selectedOrderTotal = formatAmount(selected.orderTotalAmount);
+  const selectedHeaderMeta = [
+    selected.displayName || selected.csDisplayName || "-",
+    `접수 ${selected.receiptDate || "-"}`,
+    `총 주문금액 ${selectedOrderTotal === "-" ? "-" : `${selectedOrderTotal}원`}`,
+  ].join(" · ");
   const completeAction = selectedCompleted ? "inspection-reopen" : "inspection-complete";
   const completeLabel = selectedCompleted ? "완료 취소" : "완료 처리";
   els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""} ${selectedCompleted ? "is-completed" : ""}">
@@ -2324,7 +2330,7 @@ function renderInspectionPanels(options = {}) {
           <strong>${escapeHtml(visibleInvoiceSequenceLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
-        <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
+        <span>${escapeHtml(selectedHeaderMeta)}</span>
         <label class="inspection-drawer-box">
           <span>서랍번호</span>
           <textarea class="drawer-input inspection-drawer-input" data-inspection-drawer data-order-group="${escapeHtml(selected.orderGroupNo)}" rows="2" placeholder="서랍번호 / 메모">${escapeHtml(invoiceDrawerValue(selected))}</textarea>
@@ -3044,7 +3050,7 @@ function applyWorkflowInvoiceEvent(row) {
 
 async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
   if (!allowWorkflowEvents) {
-    toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
+    toast("이벤트 저장은 ?write=1에서 가능합니다. events=0이면 비활성화됩니다.");
     return false;
   }
   const savingKey = `item::${workflowItemKey(invoice, item)}::${eventType}`;
@@ -3074,7 +3080,7 @@ async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
 
 async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
   if (!allowWorkflowEvents) {
-    toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
+    toast("이벤트 저장은 ?write=1에서 가능합니다. events=0이면 비활성화됩니다.");
     return false;
   }
   const savingKey = `invoice::${invoice.orderGroupNo}::${eventType}`;
