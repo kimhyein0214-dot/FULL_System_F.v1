@@ -1845,7 +1845,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
   </article>`;
 }
 
-function render() {
+function renderShell() {
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.appTab === state.activeTab);
   });
@@ -1854,15 +1854,47 @@ function render() {
   if (els.shortagePanel) els.shortagePanel.hidden = state.activeTab !== "shortage";
   if (els.inspectionPanel) els.inspectionPanel.hidden = state.activeTab !== "inspection";
   if (els.completedPanel) els.completedPanel.hidden = state.activeTab !== "completed";
-  renderMetrics();
-  renderDashboard();
-  renderShortagePanels();
-  renderInspectionPanels();
-  renderCompletedPanels();
-  renderFilters();
-  renderGroups();
-  renderOrderList();
-  renderTray();
+}
+
+function renderActivePanel(options = {}) {
+  if (options.metrics !== false) renderMetrics();
+  if (state.activeTab === "dashboard") {
+    renderDashboard();
+    return;
+  }
+  if (["picking", "gold"].includes(state.activeTab)) {
+    renderFilters();
+    renderGroups();
+    renderOrderList();
+    renderTray();
+    return;
+  }
+  if (state.activeTab === "shortage") {
+    renderShortagePanels();
+    return;
+  }
+  if (state.activeTab === "inspection") {
+    renderInspectionPanels();
+    return;
+  }
+  if (state.activeTab === "completed") {
+    renderCompletedPanels();
+  }
+}
+
+function render() {
+  renderShell();
+  renderActivePanel();
+}
+
+let activePanelRenderTimer = 0;
+
+function renderActivePanelSoon(delayMs = 120, options = {}) {
+  window.clearTimeout(activePanelRenderTimer);
+  activePanelRenderTimer = window.setTimeout(() => {
+    activePanelRenderTimer = 0;
+    renderActivePanel(options);
+  }, delayMs);
 }
 
 function renderPickingSurfaces() {
@@ -1874,11 +1906,18 @@ function renderPickingSurfaces() {
 
 let pickingSurfaceRenderTimer = 0;
 
-function schedulePickingSurfaces(delayMs = 700) {
+function schedulePickingSurfaces(delayMs = 3000) {
   window.clearTimeout(pickingSurfaceRenderTimer);
-  pickingSurfaceRenderTimer = window.setTimeout(() => {
+  const run = () => {
     pickingSurfaceRenderTimer = 0;
     renderPickingSurfaces();
+  };
+  pickingSurfaceRenderTimer = window.setTimeout(() => {
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(run, { timeout: 1200 });
+      return;
+    }
+    run();
   }, delayMs);
 }
 
@@ -1888,6 +1927,14 @@ function renderWorkflowSurfaces() {
   renderShortagePanels();
   renderInspectionPanels();
   renderCompletedPanels();
+}
+
+function renderWorkflowSurfacesIfVisible() {
+  if (["dashboard", "shortage", "inspection", "completed"].includes(state.activeTab)) {
+    renderWorkflowSurfaces();
+    return;
+  }
+  renderMetrics();
 }
 
 function findInvoiceAndItem(orderGroupNo, sellpiaItemNo) {
@@ -2028,7 +2075,7 @@ async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
   state.workflowEventsReady = true;
   const savedEvent = data || { ...eventRow, event_at: new Date().toISOString() };
   applyWorkflowItemEvent(savedEvent);
-  renderWorkflowSurfaces();
+  renderWorkflowSurfacesIfVisible();
   return savedEvent;
 }
 
@@ -2051,7 +2098,7 @@ async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
   state.workflowEventsReady = true;
   const savedEvent = data || { ...eventRow, event_at: new Date().toISOString() };
   applyWorkflowInvoiceEvent(savedEvent);
-  renderWorkflowSurfaces();
+  renderWorkflowSurfacesIfVisible();
   return savedEvent;
 }
 
@@ -3125,7 +3172,8 @@ function setActiveTab(tab) {
   } else if (tab === "picking" && state.filterMode === "gold") {
     state.filterMode = "all";
   }
-  render();
+  renderShell();
+  renderActivePanelSoon(120, { metrics: false });
 }
 
 function scrollToTrayItem(key) {
@@ -3462,7 +3510,11 @@ function bindEvents() {
     const button = event.target.closest("[data-group]");
     if (!button) return;
     state.currentGroup = Number(button.dataset.group);
-    render();
+    renderGroups();
+    if (["picking", "gold"].includes(state.activeTab)) {
+      renderOrderList();
+      renderTray();
+    }
   });
   els.jumpGroupBtn?.addEventListener("click", () => jumpToGroup(els.jumpGroupInput.value));
   els.jumpSeqBtn?.addEventListener("click", () => jumpToSequence(els.jumpSeqInput.value));
