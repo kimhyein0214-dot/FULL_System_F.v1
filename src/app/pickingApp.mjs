@@ -149,6 +149,11 @@ const state = {
     filter: "all",
     search: "",
   },
+  photoViewer: {
+    open: false,
+    src: "",
+    title: "",
+  },
 };
 
 const els = {
@@ -305,6 +310,63 @@ function productImageUrl(sellpiaProductCode) {
   const code = String(sellpiaProductCode || "").trim();
   if (!code) return "";
   return `${IMAGE_SUPABASE_URL}/storage/v1/object/public/${IMAGE_BUCKET}/sellpia/${encodeURIComponent(code)}.jpg`;
+}
+
+function photoTitleForItem(item = {}) {
+  return [item.ownCode, cleanOptionName(item.optionName, item.ownCode) || item.productName].filter(Boolean).join(" · ");
+}
+
+function photoImgAttrs(src, title = "") {
+  return `data-photo-src="${escapeHtml(src)}" data-photo-title="${escapeHtml(title)}"`;
+}
+
+function ensurePhotoViewer() {
+  let overlay = document.getElementById("photo-viewer-overlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "photo-viewer-overlay";
+  overlay.className = "photo-viewer-overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `<div class="photo-viewer" role="dialog" aria-modal="true" aria-label="상품 사진 확대">
+    <div class="photo-viewer-head">
+      <strong id="photo-viewer-title">상품 사진</strong>
+      <div>
+        <button class="btn" data-photo-action="refresh" type="button">새로고침</button>
+        <button class="btn" data-photo-action="close" type="button">닫기</button>
+      </div>
+    </div>
+    <div class="photo-viewer-body">
+      <img id="photo-viewer-img" alt="">
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function bustImageUrl(src) {
+  const separator = String(src || "").includes("?") ? "&" : "?";
+  return `${src}${separator}v=${Date.now()}`;
+}
+
+function openPhotoViewer(src, title = "") {
+  if (!src) return;
+  const overlay = ensurePhotoViewer();
+  state.photoViewer = { open: true, src, title };
+  overlay.hidden = false;
+  overlay.querySelector("#photo-viewer-title").textContent = title || "상품 사진";
+  overlay.querySelector("#photo-viewer-img").src = src;
+}
+
+function closePhotoViewer() {
+  const overlay = document.getElementById("photo-viewer-overlay");
+  state.photoViewer.open = false;
+  if (overlay) overlay.hidden = true;
+}
+
+function refreshPhotoViewer() {
+  if (!state.photoViewer.src) return;
+  const image = document.getElementById("photo-viewer-img");
+  if (image) image.src = bustImageUrl(state.photoViewer.src);
 }
 
 function isPicked(item) {
@@ -1115,6 +1177,34 @@ function filterLabel(filterMode) {
   }[filterMode] || "전체";
 }
 
+function itemZoneLabel(item = {}) {
+  const code = String(item.ownCode || item.raw?.prod_code || item.raw?.p_dpcode || "").trim().toUpperCase();
+  const normalized = code.replace(/^\[[^\]]+\]\s*/, "");
+  const match = normalized.match(/([A-Z가-힣]{1,4})[-_]\d{1,3}/);
+  if (match) return match[1];
+  const fallback = normalized.match(/^([A-Z가-힣]{1,4})/);
+  return fallback?.[1] || "기타";
+}
+
+function dashboardZoneStats(invoices = []) {
+  const zones = new Map();
+  for (const invoice of invoices) {
+    for (const item of invoice.items || []) {
+      const zone = itemZoneLabel(item);
+      if (!zones.has(zone)) zones.set(zone, { zone, items: 0, picked: 0, shortage: 0, invoices: new Set() });
+      const stat = zones.get(zone);
+      stat.items += 1;
+      stat.picked += isPicked(item) ? 1 : 0;
+      stat.shortage += shortageQty(item) > 0 ? 1 : 0;
+      stat.invoices.add(invoice.orderGroupNo);
+    }
+  }
+  return [...zones.values()]
+    .map((stat) => ({ ...stat, invoices: stat.invoices.size }))
+    .sort((a, b) => b.shortage - a.shortage || b.items - a.items || a.zone.localeCompare(b.zone, "ko"))
+    .slice(0, 12);
+}
+
 function renderMetrics() {
   const invoices = state.viewModel?.invoices || [];
   const items = invoices.flatMap((invoice) => invoice.items || []);
@@ -1148,6 +1238,11 @@ function renderDashboard() {
   const completedRows = state.workflowQueues?.inspectionCompletedInvoices || [];
   const completedByReceiptDate = completedRows.filter((invoice) => String(invoice.receiptDate || "").slice(0, 10) === state.selectedDate).length;
   const completedByDoneDate = completedRows.filter((invoice) => completedDateForInvoice(invoice) === state.selectedDate).length;
+  const openShortageRows = state.workflowQueues?.shortageItems || [];
+  const receivingMatchedRows = state.receivingLabel.rowCount ? openShortageRows.filter(shortageRowReceivingEntry) : [];
+  const receivingMatchedQty = receivingMatchedRows.reduce((sum, row) => sum + (Number(row.state?.shortageQty || 0) || 1), 0);
+  const receivingStatus = state.receivingLabel.rowCount ? `${state.receivingLabel.rowCount}종 · ${receivingMatchedRows.length}건` : "라벨 없음";
+  const zoneStats = dashboardZoneStats(invoices);
   const chartRows = [
     { label: "피킹완료", value: picked, total: items.length, unit: "개", tone: "good" },
     { label: "미송", value: shortage, total: items.length, unit: "개", tone: "danger" },
@@ -1184,7 +1279,7 @@ function renderDashboard() {
     </div>
     <div class="workflow-dashboard">
       <div class="workflow-flow-head">
-        <strong>미송 → 검품 연결</strong>
+        <strong>미송 / 입고 / 검품 연결</strong>
         <span class="${workflow.ready ? "ok" : state.workflowQueueError ? "bad" : "wait"}">${escapeHtml(workflow.status)}</span>
       </div>
       ${
@@ -1192,6 +1287,7 @@ function renderDashboard() {
           ? `<div class="workflow-error">${escapeHtml(state.workflowQueueError)}</div>`
           : `<div class="workflow-flow-grid">
               <div><span>미송피킹 대기</span><strong>${workflow.shortageItems}</strong><em>상품</em></div>
+              <div class="${state.receivingLabel.rowCount ? "warn" : ""}"><span>입고라벨 매칭</span><strong>${escapeHtml(receivingStatus)}</strong><em>${receivingMatchedQty ? `미송 ${receivingMatchedQty}개` : "업로드 기준"}</em></div>
               <div><span>검품 대기</span><strong>${workflow.inspectionInvoices}</strong><em>송장</em></div>
               <div><span>작업완료</span><strong>${workflow.completedInvoices}</strong><em>송장</em></div>
               <div class="${workflow.repickedInvoices ? "warn" : ""}"><span>미송완료 미검품</span><strong>${workflow.repickedInvoices}</strong><em>송장</em></div>
@@ -1203,6 +1299,38 @@ function renderDashboard() {
             </div>
             <p>미송피킹/검품은 선택 날짜가 아니라 workflow event 상태 기준으로 집계됩니다.</p>`
       }
+    </div>
+    <div class="dashboard-card dashboard-attention-card">
+      <h3>오늘 확인할 것</h3>
+      <div class="dashboard-workflow-status">
+        <div class="${shortage ? "danger" : ""}"><span>부족/미송</span><strong>${shortage}</strong><em>상품</em></div>
+        <div class="${holdInvoices ? "warn" : ""}"><span>보류 송장</span><strong>${holdInvoices}</strong><em>건</em></div>
+        <div class="${noDrawer ? "warn" : ""}"><span>서랍없음</span><strong>${noDrawer}</strong><em>건</em></div>
+        <div class="${workflow.repickedInvoices ? "warn" : ""}"><span>미송완료 미검품</span><strong>${workflow.repickedInvoices}</strong><em>건</em></div>
+      </div>
+      <div class="dashboard-actions">
+        <button class="btn" data-dashboard-tab="shortage" type="button">미송피킹</button>
+        <button class="btn" data-dashboard-tab="inspection" type="button">검품대기</button>
+      </div>
+    </div>
+    <div class="dashboard-card dashboard-zone-card">
+      <h3>구역현황</h3>
+      <div class="dashboard-zone-list">
+        ${
+          zoneStats.length
+            ? zoneStats
+                .map(
+                  (row) => `<div class="${row.shortage ? "warn" : ""}">
+                    <strong>${escapeHtml(row.zone)}</strong>
+                    <span>${row.items}개 · ${row.invoices}송장</span>
+                    <em>${row.shortage ? `미송 ${row.shortage}` : `완료 ${row.picked}`}</em>
+                  </div>`,
+                )
+                .join("")
+            : '<div><strong>-</strong><span>표시할 구역 없음</span><em>-</em></div>'
+        }
+      </div>
+      <p>자사코드 앞 구역 기준의 읽기 전용 현황입니다.</p>
     </div>
     <div class="dashboard-card dashboard-workflow-card">
       <h3>검품/완료 확인</h3>
@@ -2003,7 +2131,7 @@ function renderShortagePanels() {
       </div>
     </div>
     <div class="workflow-detail-main">
-      <div class="workflow-photo">${productImageUrl(selected.item.sellpiaProductCode) ? `<img src="${productImageUrl(selected.item.sellpiaProductCode)}" alt="">` : "사진"}</div>
+      <div class="workflow-photo">${productImageUrl(selected.item.sellpiaProductCode) ? `<img src="${productImageUrl(selected.item.sellpiaProductCode)}" ${photoImgAttrs(productImageUrl(selected.item.sellpiaProductCode), photoTitleForItem(selected.item))} alt="">` : "사진"}</div>
       <div class="workflow-detail-text">
         <h3 class="${optionHasBarChange(selected.item) ? "option-change" : ""}">${escapeHtml(cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-")}</h3>
         <p>${escapeHtml(selected.item.productName || "")}</p>
@@ -2183,7 +2311,7 @@ function renderInspectionPanels(options = {}) {
               : "";
           return `<div class="workflow-item-row ${rowClass}">
             <span class="workflow-seq-cell">${itemSequenceNo(item, index)}</span>
-            <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
+            <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" ${photoImgAttrs(imageUrl, photoTitleForItem(item))} alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
             <em class="${optionClass(item, "workflow-option-cell")}">${escapeHtml(option)}</em>
             <b>${Number(item.quantity) || 1}</b>
             <strong class="workflow-product-cell">${escapeHtml(product)}</strong>
@@ -2542,7 +2670,7 @@ function renderCompletedPanels() {
           const imageUrl = productImageUrl(item.sellpiaProductCode);
           return `<div class="workflow-item-row ${rowClass}">
             <span>${index + 1}</span>
-            <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
+            <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" ${photoImgAttrs(imageUrl, photoTitleForItem(item))} alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
             <strong>${escapeHtml(item.ownCode || "-")}</strong>
             <em class="${optionHasBarChange(item) ? "option-change" : ""}">${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</em>
             <b>${Number(item.quantity) || 1}개</b>
@@ -2579,7 +2707,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
   return `<article class="${classes}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" data-slot-key="${escapeHtml(slotKey)}">
     <div class="thumb-wrap">
       <button class="pick-check ${checked ? "checked" : ""}" data-action="toggle" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}">${checked ? "✓" : ""}</button>
-      ${imageUrl ? `<img class="thumb" src="${imageUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<div class="thumb"></div>'}
+      ${imageUrl ? `<img class="thumb" src="${imageUrl}" ${photoImgAttrs(imageUrl, photoTitleForItem(item))} alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<div class="thumb"></div>'}
     </div>
     <div class="picking-body">
       <div class="picking-main">
@@ -4357,10 +4485,11 @@ function scrollTrayToSelectedItem(key) {
 
 function selectPickingCard(key) {
   state.currentTrayKey = key;
-  els.orderList.querySelectorAll("[data-slot-key]").forEach((card) => {
-    card.classList.toggle("is-selected", card.dataset.slotKey === key);
-  });
-  renderTray();
+  els.orderList.querySelectorAll(".is-selected[data-slot-key]").forEach((card) => card.classList.remove("is-selected"));
+  els.trayBoard?.querySelectorAll(".selected[data-tray-key]").forEach((card) => card.classList.remove("selected"));
+  const selectorKey = window.CSS?.escape ? CSS.escape(key) : key.replace(/"/g, '\\"');
+  els.orderList.querySelector(`[data-slot-key="${selectorKey}"]`)?.classList.add("is-selected");
+  els.trayBoard?.querySelector(`[data-tray-key="${selectorKey}"]`)?.classList.add("selected");
   scrollTrayToSelectedItem(key);
 }
 
@@ -4767,7 +4896,19 @@ function bindEvents() {
   els.orderList.addEventListener("change", onDrawerChange);
   els.orderList.addEventListener("change", onShortageInputChange);
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.photoViewer.open) closePhotoViewer();
     if (event.key === "Escape" && state.orderListModal.open) closeOrderListModal();
+  });
+  document.addEventListener("click", (event) => {
+    const image = event.target.closest("[data-photo-src]");
+    if (image) {
+      openPhotoViewer(image.dataset.photoSrc, image.dataset.photoTitle || "");
+      return;
+    }
+    const photoAction = event.target.closest("[data-photo-action]");
+    if (!photoAction) return;
+    if (photoAction.dataset.photoAction === "close") closePhotoViewer();
+    if (photoAction.dataset.photoAction === "refresh") refreshPhotoViewer();
   });
   els.shortageFilterBar?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-shortage-filter]");
