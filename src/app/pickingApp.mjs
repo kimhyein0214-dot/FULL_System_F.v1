@@ -43,12 +43,14 @@ const state = {
   inspectionFilter: "all",
   inspectionHideCompleted: false,
   inspectionSearchText: "",
+  sidebarCollapsed: false,
   workflowEventsReady: false,
   workflowEventsChecked: false,
   saving: new Set(),
   drawerKeypad: {
     orderGroupNo: "",
     value: "",
+    note: "",
   },
   orderListModal: {
     open: false,
@@ -64,6 +66,10 @@ const els = {
   sortToggle: document.getElementById("sort-toggle"),
   searchInput: document.getElementById("search-input"),
   filterBar: document.getElementById("filter-bar"),
+  mainGrid: document.querySelector(".main-grid"),
+  sidebar: document.querySelector(".sidebar"),
+  sidebarToggle: document.getElementById("sidebar-toggle"),
+  sideShortcuts: document.getElementById("side-shortcuts"),
   inspectionFilterBar: document.getElementById("inspection-filter-bar"),
   inspectionSearchInput: document.getElementById("inspection-search-input"),
   groupList: document.getElementById("group-list"),
@@ -1314,6 +1320,119 @@ function renderFilters() {
   });
 }
 
+function sideShortcutConfig() {
+  if (["picking", "gold"].includes(state.activeTab)) {
+    return {
+      title: "상태 바로가기",
+      items: [
+        ["filter", "all", "전체"],
+        ["filter", "todo", "미완료"],
+        ["filter", "shortage", "미송"],
+        ["filter", "nodrawer", "서랍없음"],
+        ["filter", "gold", "골드"],
+        ["filter", "hold", "보류"],
+        ["filter", "done", "완료"],
+      ],
+    };
+  }
+  if (state.activeTab === "shortage") {
+    return {
+      title: "미송 보기",
+      items: [
+        ["shortage", "all", "전체"],
+        ["shortage", "code", "자사코드별"],
+        ["shortage", "drawer", "서랍입력"],
+        ["shortage", "completed", "피킹완료"],
+      ],
+    };
+  }
+  if (state.activeTab === "inspection") {
+    return {
+      title: "검품 보기",
+      items: [
+        ["inspection", "all", "전체"],
+        ["inspection", "shortage", "미송포함"],
+        ["inspection", "hold", "보류"],
+        ["inspection", "gold", "골드"],
+        ["inspection-hide", "toggle", state.inspectionHideCompleted ? "완료보기" : "완료제거"],
+      ],
+    };
+  }
+  if (state.activeTab === "completed") {
+    return {
+      title: "완료 기준",
+      items: [
+        ["completed-date", "receipt", "접수일"],
+        ["completed-date", "completed", "완료일"],
+      ],
+    };
+  }
+  return { title: "바로가기", items: [] };
+}
+
+function isSideShortcutActive(type, value) {
+  if (type === "filter") return state.filterMode === value;
+  if (type === "shortage") return state.shortageFilter === value;
+  if (type === "inspection") return state.inspectionFilter === value;
+  if (type === "inspection-hide") return state.inspectionHideCompleted;
+  if (type === "completed-date") return state.completedDateMode === value;
+  return false;
+}
+
+function renderSideShortcuts() {
+  if (!els.sideShortcuts) return;
+  const config = sideShortcutConfig();
+  if (!config.items.length || state.sidebarCollapsed) {
+    els.sideShortcuts.innerHTML = "";
+    return;
+  }
+  els.sideShortcuts.innerHTML = `<div class="side-title">${escapeHtml(config.title)}</div>
+    <div class="side-shortcut-grid">
+      ${config.items
+        .map(
+          ([type, value, label]) =>
+            `<button class="side-shortcut ${isSideShortcutActive(type, value) ? "active" : ""}" data-side-shortcut="${type}" data-side-value="${escapeHtml(value)}" type="button">${escapeHtml(label)}</button>`,
+        )
+        .join("")}
+    </div>`;
+}
+
+function applySideShortcut(type, value) {
+  if (type === "filter") {
+    state.filterMode = value || "all";
+    if (state.activeTab === "gold" && state.filterMode !== "gold") state.activeTab = "picking";
+    render();
+    return;
+  }
+  if (type === "shortage") {
+    state.shortageFilter = value || "all";
+    state.selectedShortageKey = "";
+    renderShortagePanels();
+    renderSideShortcuts();
+    return;
+  }
+  if (type === "inspection") {
+    state.inspectionFilter = value || "all";
+    state.selectedInspectionGroup = "";
+    renderInspectionPanels();
+    renderSideShortcuts();
+    return;
+  }
+  if (type === "inspection-hide") {
+    state.inspectionHideCompleted = !state.inspectionHideCompleted;
+    state.selectedInspectionGroup = "";
+    renderInspectionPanels();
+    renderSideShortcuts();
+    return;
+  }
+  if (type === "completed-date") {
+    state.completedDateMode = value || "receipt";
+    state.selectedCompletedGroup = "";
+    renderCompletedPanels();
+    renderSideShortcuts();
+  }
+}
+
 function renderProgress(invoices) {
   const items = invoices.flatMap((invoice) => invoice.items || []);
   const done = items.filter(isPicked).length;
@@ -1849,11 +1968,19 @@ function renderShell() {
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.appTab === state.activeTab);
   });
+  els.mainGrid?.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  els.sidebar?.classList.toggle("collapsed", state.sidebarCollapsed);
+  if (els.sidebarToggle) {
+    els.sidebarToggle.textContent = state.sidebarCollapsed ? "▶" : "◀";
+    els.sidebarToggle.title = state.sidebarCollapsed ? "사이드바 펼치기" : "사이드바 접기";
+    els.sidebarToggle.setAttribute("aria-expanded", String(!state.sidebarCollapsed));
+  }
   if (els.pickingPanel) els.pickingPanel.hidden = !["picking", "gold"].includes(state.activeTab);
   if (els.dashboardPanel) els.dashboardPanel.hidden = state.activeTab !== "dashboard";
   if (els.shortagePanel) els.shortagePanel.hidden = state.activeTab !== "shortage";
   if (els.inspectionPanel) els.inspectionPanel.hidden = state.activeTab !== "inspection";
   if (els.completedPanel) els.completedPanel.hidden = state.activeTab !== "completed";
+  renderSideShortcuts();
 }
 
 function renderActivePanel(options = {}) {
@@ -3031,6 +3158,33 @@ function drawerDigitsOnly(value) {
   return String(value || "").replace(/\D/g, "").slice(0, 8);
 }
 
+function drawerPrefixForSeller(seller) {
+  const text = String(seller || "").trim().toLowerCase();
+  if (text.includes("smart") || text.includes("naver") || text.includes("스마트") || text.includes("네이버")) return "ㅁㅅ";
+  if (text.includes("ably") || text.includes("a-bly") || text.includes("에이블리")) return "ㅁㅇ";
+  if (text.includes("coupang") || text.includes("쿠팡")) return "ㅁㅋ";
+  if (text.includes("zigzag") || text.includes("zig") || text.includes("지그재그")) return "ㅁㅈ";
+  return "ㅁㅁ";
+}
+
+function splitDrawerMemo(value) {
+  const lines = String(value || "").replace(/\r\n/g, "\n").split("\n");
+  const first = (lines.shift() || "").trim();
+  const rest = lines.join("\n").trim();
+  if (/^(ㅁ[ㅁㅅㅇㅋㅈ])?\s*\d+\s*$/.test(first)) {
+    return { digits: drawerDigitsOnly(first), note: rest };
+  }
+  return { digits: drawerDigitsOnly(first), note: [first, rest].filter(Boolean).join("\n") };
+}
+
+function composeDrawerMemo(invoice, digits, note = "") {
+  const drawerNo = drawerDigitsOnly(digits);
+  const cleanNote = String(note || "").trim();
+  if (!drawerNo) return cleanNote;
+  const firstLine = `${drawerPrefixForSeller(invoice?.seller)}${drawerNo}`;
+  return cleanNote ? `${firstLine}\n${cleanNote}` : firstLine;
+}
+
 function ensureDrawerKeypad() {
   let overlay = document.getElementById("drawer-keypad-overlay");
   if (overlay) return overlay;
@@ -3067,7 +3221,9 @@ function renderDrawerKeypad() {
 function openDrawerKeypad(input) {
   if (!input) return;
   state.drawerKeypad.orderGroupNo = input.dataset.orderGroup || "";
-  state.drawerKeypad.value = drawerDigitsOnly(input.value);
+  const parsed = splitDrawerMemo(input.value);
+  state.drawerKeypad.value = parsed.digits;
+  state.drawerKeypad.note = parsed.note;
   const overlay = ensureDrawerKeypad();
   overlay.hidden = false;
   renderDrawerKeypad();
@@ -3078,6 +3234,7 @@ function closeDrawerKeypad() {
   if (overlay) overlay.hidden = true;
   state.drawerKeypad.orderGroupNo = "";
   state.drawerKeypad.value = "";
+  state.drawerKeypad.note = "";
 }
 
 async function commitDrawerKeypad() {
@@ -3092,7 +3249,7 @@ async function commitDrawerKeypad() {
     closeDrawerKeypad();
     return;
   }
-  const value = state.drawerKeypad.value.trim();
+  const value = composeDrawerMemo(invoice, state.drawerKeypad.value, state.drawerKeypad.note);
   await saveDrawerForInvoice(invoice, value);
   invoice.sellpiaMemo1 = value;
   closeDrawerKeypad();
@@ -3463,6 +3620,15 @@ function bindEvents() {
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     button.addEventListener("click", () => setActiveTab(button.dataset.appTab));
   });
+  els.sidebarToggle?.addEventListener("click", () => {
+    state.sidebarCollapsed = !state.sidebarCollapsed;
+    renderShell();
+  });
+  els.sideShortcuts?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-side-shortcut]");
+    if (!button) return;
+    applySideShortcut(button.dataset.sideShortcut, button.dataset.sideValue);
+  });
   els.refreshBtn.addEventListener("click", () => loadPickingData().catch(showError));
   els.todayBtn.addEventListener("click", () => {
     state.selectedDate = todayDateString();
@@ -3511,6 +3677,7 @@ function bindEvents() {
       state.inspectionHideCompleted = !state.inspectionHideCompleted;
       state.selectedInspectionGroup = "";
       renderInspectionPanels();
+      renderSideShortcuts();
       return;
     }
     const button = event.target.closest("[data-inspection-filter]");
@@ -3518,6 +3685,7 @@ function bindEvents() {
     state.inspectionFilter = button.dataset.inspectionFilter || "all";
     state.selectedInspectionGroup = "";
     renderInspectionPanels();
+    renderSideShortcuts();
   });
   els.inspectionPanel?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-inspection-export]");
@@ -3608,6 +3776,7 @@ function bindEvents() {
     state.shortageFilter = button.dataset.shortageFilter || "all";
     state.selectedShortageKey = "";
     renderShortagePanels();
+    renderSideShortcuts();
   });
   els.shortageListBody?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-shortage-key]");
@@ -3655,6 +3824,7 @@ function bindEvents() {
       state.completedDateMode = button.dataset.completedDateMode === "completed" ? "completed" : "receipt";
       state.selectedCompletedGroup = "";
       renderCompletedPanels();
+      renderSideShortcuts();
     });
   });
   els.completedListBody?.addEventListener("click", (event) => {
