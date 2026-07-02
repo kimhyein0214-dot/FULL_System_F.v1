@@ -1329,6 +1329,7 @@ function renderTray() {
 
   els.bottomTray?.classList.toggle("open", state.trayOpen);
   els.bottomTray?.classList.toggle("expanded", state.trayExpanded);
+  if (els.bottomTray) els.bottomTray.scrollTop = 0;
   if (els.trayHandle) els.trayHandle.setAttribute("aria-expanded", String(state.trayOpen));
   if (els.trayLabel) els.trayLabel.textContent = `${groupLabel} 상품 슬롯`;
   if (els.trayTitle) els.trayTitle.textContent = `${groupLabel} 상품 슬롯`;
@@ -4003,9 +4004,10 @@ function scrollToTrayItem(key) {
 function scrollTrayToSelectedItem(key) {
   const selectorKey = window.CSS?.escape ? CSS.escape(key) : key.replace(/"/g, '\\"');
   const target = els.trayBoard?.querySelector(`[data-tray-key="${selectorKey}"]`);
-  if (target) {
-    target.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-  }
+  if (!target || !els.trayBoard) return;
+  const nextLeft = target.offsetLeft - Math.max(0, (els.trayBoard.clientWidth - target.clientWidth) / 2);
+  els.trayBoard.scrollTo({ left: Math.max(0, nextLeft), behavior: "smooth" });
+  if (els.bottomTray) els.bottomTray.scrollTop = 0;
 }
 
 function selectPickingCard(key) {
