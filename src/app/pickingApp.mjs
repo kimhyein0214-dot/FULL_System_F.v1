@@ -2027,6 +2027,16 @@ function firstRawText(source, ...keys) {
   return "";
 }
 
+function firstRawPreservedText(source, ...keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value === null || value === undefined) continue;
+    const text = String(value);
+    if (text.trim()) return text;
+  }
+  return "";
+}
+
 function csvCell(value) {
   const text = String(value ?? "");
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -2052,11 +2062,11 @@ function timestampForFilename() {
 }
 
 function itemSellerProductName(item) {
-  return firstRawText(item.raw, "seller_product_name", "seller_p_name", "mall_product_name") || item.productName || "";
+  return firstRawPreservedText(item.raw, "seller_product_name", "seller_p_name", "mall_product_name", "p_name") || item.productName || "";
 }
 
 function itemSellerOptionName(item) {
-  return firstRawText(item.raw, "seller_option_name", "seller_p_option", "mall_option_name") || item.optionName || "";
+  return firstRawPreservedText(item.raw, "seller_option_name", "seller_p_option", "mall_option_name", "p_option") || item.optionName || "";
 }
 
 function itemSellpiaItemNo(item) {
@@ -2421,20 +2431,112 @@ function labelReceivedAtForItem(invoice, item) {
   return invoice?.receiptDate || firstRawText(item.raw, "shortage_date", "ord_date", "receipt_date") || "";
 }
 
-function labelSourceInvoices() {
-  return exportOrderedInvoices(
-    mergeInvoicesUnique(
-      state.viewModel?.invoices || [],
-      state.workflowQueues?.viewModel?.invoices || [],
-      state.workflowQueues?.inspectionInvoices || [],
-      state.workflowQueues?.inspectionCompletedInvoices || [],
-    ),
-  ).filter((invoice) => (invoice.items || []).some((item) => isGoldItem(item) || isLabelTarget({ privateCode: item.ownCode || "" })));
+function labelShortageRankKeysForRow(row) {
+  const orderKeys = [row?.ord_no, row?.inv_no].map((value) => String(value || "").trim()).filter(Boolean);
+  const itemKeys = [row?.item_no, row?.p_code, row?.sellpia_p_code].map((value) => String(value || "").trim()).filter(Boolean);
+  return orderKeys.flatMap((orderKey) => itemKeys.map((itemKey) => `${orderKey}::${itemKey}`));
 }
 
-function buildGoldLabelSourceRows() {
-  return labelSourceInvoices().flatMap((invoice) =>
-    (invoice.items || []).map((item) => ({
+function labelShortageRankKeysForItem(invoice, item) {
+  const orderKeys = [invoice?.orderGroupNo, invoice?.invoiceNo].map((value) => String(value || "").trim()).filter(Boolean);
+  const itemKeys = [item?.sellpiaItemNo, item?.ownCode, item?.sellpiaProductCode].map((value) => String(value || "").trim()).filter(Boolean);
+  return orderKeys.flatMap((orderKey) => itemKeys.map((itemKey) => `${orderKey}::${itemKey}`));
+}
+
+async function loadLabelShortageRankMap() {
+  const rows = await fetchAllRows(() =>
+    db
+      .from("shortage")
+      .select("ord_no,inv_no,item_no,p_code,sellpia_p_code,created_at,updated_at,work_date")
+      .order("created_at", { ascending: true, nullsFirst: false }),
+  );
+  const map = new Map();
+  rows.forEach((row, index) => {
+    const time = new Date(row.created_at || row.updated_at || row.work_date || 0).getTime() || 0;
+    const rank = { index, time };
+    labelShortageRankKeysForRow(row).forEach((key) => {
+      if (!map.has(key)) map.set(key, rank);
+    });
+  });
+  return map;
+}
+
+function labelItemRank(invoice, item, shortageRankMap) {
+  for (const key of labelShortageRankKeysForItem(invoice, item)) {
+    const rank = shortageRankMap?.get(key);
+    if (rank) return rank;
+  }
+  return null;
+}
+
+function compareLabelItems(invoice, shortageRankMap) {
+  return (a, b) => {
+    const aRank = labelItemRank(invoice, a, shortageRankMap);
+    const bRank = labelItemRank(invoice, b, shortageRankMap);
+    if (aRank || bRank) {
+      if (!aRank) return 1;
+      if (!bRank) return -1;
+      if (aRank.time !== bRank.time) return aRank.time - bRank.time;
+      if (aRank.index !== bRank.index) return aRank.index - bRank.index;
+    }
+    return (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) || itemSequenceNo(a, 999999) - itemSequenceNo(b, 999999);
+  };
+}
+
+function labelInvoiceRank(invoice, shortageRankMap) {
+  let best = null;
+  (invoice.items || []).forEach((item) => {
+    const rank = labelItemRank(invoice, item, shortageRankMap);
+    if (!rank) return;
+    if (!best || rank.time < best.time || (rank.time === best.time && rank.index < best.index)) best = rank;
+  });
+  return best;
+}
+
+function labelSourceInvoices(shortageRankMap = new Map()) {
+  const selected = exportOrderedInvoices(state.viewModel?.invoices || [])
+    .filter((invoice) => (invoice.items || []).some((item) => isGoldItem(item) || isLabelTarget({ privateCode: item.ownCode || "" })))
+    .map((invoice) => ({ ...invoice, _labelSelectedDate: true }));
+  const selectedKeys = new Set(selected.map((invoice) => invoice.orderGroupNo || invoice.invoiceNo).filter(Boolean));
+  const extras = mergeInvoicesUnique(
+    state.workflowQueues?.inspectionInvoices || [],
+    state.workflowQueues?.inspectionCompletedInvoices || [],
+    state.workflowQueues?.viewModel?.invoices || [],
+  )
+    .filter((invoice) => {
+      const key = invoice.orderGroupNo || invoice.invoiceNo;
+      if (!key || selectedKeys.has(key)) return false;
+      return (invoice.items || []).some((item) => isGoldItem(item) || isLabelTarget({ privateCode: item.ownCode || "" }));
+    })
+    .sort(
+      (a, b) => {
+        const dateCompare = String(a.receiptDate || "").localeCompare(String(b.receiptDate || ""));
+        if (dateCompare !== 0) return dateCompare;
+        const aRank = labelInvoiceRank(a, shortageRankMap);
+        const bRank = labelInvoiceRank(b, shortageRankMap);
+        if (aRank || bRank) {
+          if (!aRank) return 1;
+          if (!bRank) return -1;
+          if (aRank.time !== bRank.time) return aRank.time - bRank.time;
+          if (aRank.index !== bRank.index) return aRank.index - bRank.index;
+        }
+        return (
+          (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
+          String(a.orderGroupNo || "").localeCompare(String(b.orderGroupNo || ""), "ko", { numeric: true })
+        );
+      },
+    );
+  return [...selected, ...extras];
+}
+
+function labelItemsForInvoice(invoice, shortageRankMap) {
+  void shortageRankMap;
+  return [...(invoice.items || [])];
+}
+
+function buildGoldLabelSourceRows(shortageRankMap = new Map()) {
+  return labelSourceInvoices(shortageRankMap).flatMap((invoice) =>
+    labelItemsForInvoice(invoice, shortageRankMap).map((item) => ({
       invNo: invoice.invoiceNo || "",
       orderNo: invoice.orderGroupNo || "",
       productCode: item.sellpiaProductCode || "",
@@ -2448,8 +2550,12 @@ function buildGoldLabelSourceRows() {
   );
 }
 
-function exportGoldLabelXlsx() {
-  const sourceRows = buildGoldLabelSourceRows();
+async function exportGoldLabelXlsx() {
+  if (!state.workflowQueues && !state.workflowQueueError) {
+    await loadWorkflowData();
+  }
+  const shortageRankMap = await loadLabelShortageRankMap();
+  const sourceRows = buildGoldLabelSourceRows(shortageRankMap);
   if (!sourceRows.length) {
     toast("라벨 XLSX 대상이 없습니다.");
     return;
@@ -3202,7 +3308,7 @@ function bindEvents() {
   els.inspectionPanel?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-inspection-export]");
     if (!button) return;
-    if (button.dataset.inspectionExport === "gold-label") exportGoldLabelXlsx();
+    if (button.dataset.inspectionExport === "gold-label") exportGoldLabelXlsx().catch(showError);
   });
   els.inspectionSearchInput?.addEventListener("input", () => {
     state.inspectionSearchText = els.inspectionSearchInput.value;
