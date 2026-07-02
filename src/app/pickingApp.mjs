@@ -1872,6 +1872,16 @@ function renderPickingSurfaces() {
   renderTray();
 }
 
+let pickingSurfaceRenderTimer = 0;
+
+function schedulePickingSurfaces(delayMs = 700) {
+  window.clearTimeout(pickingSurfaceRenderTimer);
+  pickingSurfaceRenderTimer = window.setTimeout(() => {
+    pickingSurfaceRenderTimer = 0;
+    renderPickingSurfaces();
+  }, delayMs);
+}
+
 function renderWorkflowSurfaces() {
   renderMetrics();
   renderDashboard();
@@ -1901,6 +1911,40 @@ function patchLocalPickingState(invoice, item, patch) {
     };
   }
   Object.assign(item.pickingState, patch);
+}
+
+function itemDataSelector(invoice, item) {
+  const orderGroupNo = String(invoice?.orderGroupNo || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const sellpiaItemNo = String(item?.sellpiaItemNo || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `[data-order-group="${orderGroupNo}"][data-item-no="${sellpiaItemNo}"]`;
+}
+
+function paintPickingItemState(invoice, item) {
+  const picked = isPicked(item);
+  const shortage = shortageQty(item);
+  const card = els.orderList?.querySelector(`.picking-item-card${itemDataSelector(invoice, item)}`);
+  if (card) {
+    card.classList.toggle("is-picked", picked);
+    card.classList.toggle("has-shortage", shortage > 0);
+    card.classList.toggle("has-hold", isHold(item));
+    const check = card.querySelector("[data-action='toggle']");
+    if (check) {
+      check.classList.toggle("checked", picked);
+      check.textContent = picked ? "✓" : "";
+    }
+    const shortageValue = card.querySelector(".shortage-value");
+    if (shortageValue) shortageValue.textContent = String(shortage);
+  }
+
+  const trayItem = els.trayBoard?.querySelector(`[data-tray-key="${itemSlotKey(invoice, item).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`);
+  if (trayItem) {
+    const meta = itemStatusMeta(item);
+    trayItem.classList.remove("picked", "shortage", "hold", "todo");
+    trayItem.classList.add(meta.className);
+    trayItem.querySelector(".tray-item-check")?.replaceChildren(document.createTextNode(picked ? "✓" : ""));
+    const stateNode = trayItem.querySelector(".tray-item-state");
+    if (stateNode) stateNode.textContent = meta.label;
+  }
 }
 
 function buildItemEvent(invoice, item, eventType, overrides = {}) {
@@ -2825,7 +2869,8 @@ async function onOrderListClick(event) {
 
   if (action === "toggle") {
     patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
-    renderPickingSurfaces();
+    paintPickingItemState(invoice, item);
+    schedulePickingSurfaces();
     try {
       await savePickingRow(invoice, item, isPicked(item) ? "picked" : "pick_unchecked");
       toast("피킹 상태 저장");
@@ -2849,7 +2894,8 @@ async function onOrderListClick(event) {
             ? "shortage_qty_changed"
             : null;
     patchLocalPickingState(invoice, item, { shortageQty: next });
-    renderPickingSurfaces();
+    paintPickingItemState(invoice, item);
+    schedulePickingSurfaces();
     try {
       await savePickingRow(invoice, item, eventType, { quantity: next });
       toast("부족수량 저장");
@@ -3212,7 +3258,8 @@ async function toggleSelectedItem() {
   const { invoice, item } = findInvoiceAndItem(orderGroupNo, sellpiaItemNo);
   if (!invoice || !item) return;
   patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
-  renderPickingSurfaces();
+  paintPickingItemState(invoice, item);
+  schedulePickingSurfaces();
   try {
     await savePickingRow(invoice, item, isPicked(item) ? "picked" : "pick_unchecked");
     toast("피킹 상태 저장");
