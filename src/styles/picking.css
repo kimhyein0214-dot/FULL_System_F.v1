@@ -664,6 +664,7 @@ input {
   min-height: 0;
   overflow: auto;
   padding: 8px;
+  touch-action: pan-y;
 }
 
 .dashboard-body {

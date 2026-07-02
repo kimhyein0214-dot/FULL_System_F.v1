@@ -4608,6 +4608,55 @@ function jumpToGroup(value) {
   selectFirstItemOfInvoice(invoice);
 }
 
+function canSwipePickingGroup() {
+  return state.activeTab === "picking" && state.filterMode === "all" && !state.searchText.trim() && state.groups.length > 1;
+}
+
+function movePickingGroup(delta) {
+  if (!canSwipePickingGroup()) return false;
+  const nextGroup = Math.max(0, Math.min(state.groups.length - 1, state.currentGroup + delta));
+  if (nextGroup === state.currentGroup) return false;
+  state.currentGroup = nextGroup;
+  renderGroups();
+  renderOrderList();
+  renderTray();
+  return true;
+}
+
+function bindPickingGroupSwipe() {
+  if (!els.orderList) return;
+  let startX = 0;
+  let startY = 0;
+  let startTime = 0;
+
+  els.orderList.addEventListener(
+    "touchstart",
+    (event) => {
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      startTime = Date.now();
+    },
+    { passive: true },
+  );
+
+  els.orderList.addEventListener(
+    "touchend",
+    (event) => {
+      const touch = event.changedTouches?.[0];
+      if (!touch || !startTime) return;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      const elapsed = Date.now() - startTime;
+      startTime = 0;
+      if (elapsed > 800 || Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+      movePickingGroup(dx < 0 ? 1 : -1);
+    },
+    { passive: true },
+  );
+}
+
 function jumpToSequence(value) {
   const seq = Number(onlyDigits(value));
   const invoices = sortedAllInvoices();
@@ -4948,6 +4997,7 @@ function bindEvents() {
   });
   els.orderList.addEventListener("change", onDrawerChange);
   els.orderList.addEventListener("change", onShortageInputChange);
+  bindPickingGroupSwipe();
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.photoViewer.open) closePhotoViewer();
     if (event.key === "Escape" && state.orderListModal.open) closeOrderListModal();
