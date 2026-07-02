@@ -1101,7 +1101,11 @@ function isInspectionVisibleBaseInvoice(invoice) {
 
 function inspectionSourceInvoices() {
   return sortInspectionInvoices(
-    mergeInvoicesUnique(state.viewModel?.invoices || [], state.workflowQueues?.inspectionInvoices || []).filter(isInspectionVisibleBaseInvoice),
+    mergeInvoicesUnique(
+      state.viewModel?.invoices || [],
+      state.workflowQueues?.inspectionInvoices || [],
+      state.workflowQueues?.inspectionCompletedInvoices || [],
+    ).filter(isInspectionVisibleBaseInvoice),
   );
 }
 
