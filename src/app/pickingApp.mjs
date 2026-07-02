@@ -2660,6 +2660,7 @@ function renderCsPanels() {
   const preset = CS_TEMPLATE_PRESETS[presetKey] || CS_TEMPLATE_PRESETS.d1;
   const message = buildCsMessage(selected);
   const option = cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-";
+  const openStatusLabel = selected.localStatus === "contacted" ? "연락 취소" : selected.localStatus === "done" ? "완료 취소" : "처리전";
   els.csDetail.innerHTML = `<div class="cs-detail-card">
     <div class="workflow-detail-head">
       <div>
@@ -2678,7 +2679,7 @@ function renderCsPanels() {
       <small>송장 ${escapeHtml(selected.invoice.invoiceNo || "-")} · ${escapeHtml(invoiceSequenceWithGroupLabel(selected.invoice))}</small>
     </div>
     <div class="cs-status-actions">
-      <button class="filter-chip ${selected.localStatus === "open" ? "active" : ""}" data-cs-set-status="open" data-cs-key="${escapeHtml(selected.key)}" type="button">처리전</button>
+      <button class="filter-chip ${selected.localStatus === "open" ? "active" : ""}" data-cs-set-status="open" data-cs-key="${escapeHtml(selected.key)}" type="button">${escapeHtml(openStatusLabel)}</button>
       <button class="filter-chip ${selected.localStatus === "contacted" ? "active" : ""}" data-cs-set-status="contacted" data-cs-key="${escapeHtml(selected.key)}" type="button">연락</button>
       <button class="filter-chip ${selected.localStatus === "done" ? "active" : ""}" data-cs-set-status="done" data-cs-key="${escapeHtml(selected.key)}" type="button">완료</button>
     </div>
@@ -4915,9 +4916,19 @@ function bindEvents() {
     }
     const statusButton = event.target.closest("[data-cs-set-status]");
     if (!statusButton) return;
-    state.csLocalStatus[statusButton.dataset.csKey] = statusButton.dataset.csSetStatus || "open";
+    const nextStatus = statusButton.dataset.csSetStatus || "open";
+    const row = allCsRows().find((item) => item.key === statusButton.dataset.csKey);
+    const prevStatus = row?.localStatus || "open";
+    state.csLocalStatus[statusButton.dataset.csKey] = nextStatus;
+    if (prevStatus === "contacted" && nextStatus === "open" && state.csStatusFilter === "contacted") {
+      state.csStatusFilter = "open";
+    }
     renderCsPanels();
     renderSideShortcuts();
+    if (prevStatus === "contacted" && nextStatus === "open") toast("연락 처리를 취소했습니다.");
+    else if (nextStatus === "contacted") toast("연락 처리했습니다.");
+    else if (nextStatus === "done") toast("CS 완료 처리했습니다.");
+    else toast("CS 상태를 처리전으로 변경했습니다.");
   });
   els.dashboardSummary?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-dashboard-tab]");
