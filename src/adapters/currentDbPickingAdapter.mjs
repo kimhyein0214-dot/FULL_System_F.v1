@@ -74,6 +74,7 @@ export function normalizeCurrentDbItem(item = {}) {
     itemSalesAmount: firstNumber(item.sellpia_item_sales_amount, item.item_sales_amount),
     sellpiaMemo2: firstText(item.o_shop_memo2, item.shop_memo2, item.memo2),
     sellpiaLocation: firstText(item.p_location, item.location),
+    inspectionMemo: firstText(item.insp_memo, item.inspection_memo),
     itemOrderIndex: parseItemOrderIndex(sellpiaItemNo, item.sort_order),
     sortOrder: firstNumber(item.sort_order),
     raw: item,

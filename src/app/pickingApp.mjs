@@ -1,5 +1,5 @@
 import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260701-inspection-seq-group2";
-import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260701-inspection-seq-group2";
+import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260702-inspection-memos1";
 
 const SUPABASE_URL = "https://vgxocngpykhlkosiaeew.supabase.co";
 const SUPABASE_KEY = "sb_publishable_XVnKGJo66GZiYTq5Ivu8dA_SjBVvX0g";
@@ -773,6 +773,8 @@ function renderInspectionItemHeader() {
     <span>자사코드</span>
     <span>셀피아코드</span>
     <span>부족수량</span>
+    <span>셀피아 주문메모</span>
+    <span>상품 확인메모</span>
     <span>상태</span>
   </div>`;
 }
@@ -1799,18 +1801,20 @@ function renderInspectionPanels() {
   const completeLabel = selectedCompleted ? "완료 취소" : "완료 처리";
   els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""} ${selectedCompleted ? "is-completed" : ""}">
       <div class="inspection-title-block">
-        <strong>${escapeHtml(invoiceSequenceWithGroupLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
+        <div class="inspection-title-line">
+          <strong>${escapeHtml(visibleInvoiceSequenceLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+        </div>
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
       </div>
       <div class="inspection-actions">
-        <span class="invoice-badge">${escapeHtml(invoiceGroupSlotLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</span>
+        <span class="invoice-badge inspection-slot-badge">${escapeHtml(invoiceGroupSlotLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</span>
+        <button class="btn" data-action="${holdAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${holdLabel}</button>
+        <button class="btn primary" data-action="${completeAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${completeLabel}</button>
         ${selectedCompleted ? '<span class="workflow-row-badge done">완료</span>' : ""}
         ${invoiceHasGold(selected) ? '<span class="workflow-row-badge gold">골드</span>' : ""}
         ${selectedRepicked ? `<span class="workflow-row-badge warn">미송 ${selectedRepicked}</span>` : ""}
         ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
-        <button class="btn" data-action="${holdAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${holdLabel}</button>
-        <button class="btn primary" data-action="${completeAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${completeLabel}</button>
-        ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
       </div>
     </div>
     <div class="workflow-item-table inspection-item-table">
@@ -1826,6 +1830,10 @@ function renderInspectionPanels() {
           const shortage = Number(itemState?.shortageQty || shortageQty(item) || 0);
           const statusText = selectedCompleted ? "검품완료" : itemRepicked ? "미송피킹 완료" : "전체상품";
           const statusNotes = [itemState?.drawerMemo ? `서랍 ${itemState.drawerMemo}` : "", itemState?.memo ? itemState.memo : ""].filter(Boolean);
+          const sellpiaOrderMemo = itemSellpiaOrderMemo(selected, item);
+          const inspectionMemo = itemInspectionMemo(item);
+          const memoReadonly = allowWrites ? "" : "readonly";
+          const memoHint = allowWrites ? "" : ' title="읽기전용입니다. 저장은 ?write=1에서 가능합니다."';
           const reopenButton =
             itemRepicked && !selectedCompleted
               ? `<button class="workflow-inline-btn danger" data-action="shortage-repick-reopen" data-order-group="${escapeHtml(selected.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" type="button" ${actionDisabled}>완료취소</button>`
@@ -1840,6 +1848,12 @@ function renderInspectionPanels() {
             <strong class="workflow-code-cell">${escapeHtml(item.ownCode || "-")}</strong>
             <span class="workflow-sellpia-cell">${escapeHtml(item.sellpiaProductCode || "-")}</span>
             <span class="workflow-shortage-cell">${shortage}</span>
+            <label class="inspection-memo-cell ${sellpiaOrderMemo ? "has-value" : ""}">
+              <textarea data-inspection-memo-field="sellpia-order" data-order-group="${escapeHtml(selected.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" rows="2" placeholder="셀피아 주문메모" ${memoReadonly}${memoHint}>${escapeHtml(sellpiaOrderMemo)}</textarea>
+            </label>
+            <label class="inspection-memo-cell ${inspectionMemo ? "has-value" : ""}">
+              <textarea data-inspection-memo-field="confirm" data-order-group="${escapeHtml(selected.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" rows="2" placeholder="상품 확인메모" ${memoReadonly}${memoHint}>${escapeHtml(inspectionMemo)}</textarea>
+            </label>
             <small class="workflow-status-cell">
               <span>${escapeHtml(statusText)}</span>
               ${statusNotes.length ? `<em>${escapeHtml(statusNotes.join(" / "))}</em>` : ""}
@@ -2390,6 +2404,55 @@ function cleanSellpiaManageMemo(value) {
 
 function itemOrderMemo(invoice, item) {
   return cleanSellpiaManageMemo(firstRawText(item.raw, "order_memo", "o_memo", "memo") || invoice.orderMemo || "");
+}
+
+function itemSellpiaOrderMemo(invoice, item) {
+  return firstRawPreservedText(item.raw, "order_memo", "o_memo", "memo") || invoice.orderMemo || "";
+}
+
+function inspectionMemoCode(item) {
+  return String(item?.sellpiaProductCode || item?.raw?.p_code || item?.ownCode || "").trim();
+}
+
+function itemInspectionMemo(item) {
+  return String(item?.inspectionMemo || item?.raw?.insp_memo || item?.raw?.inspection_memo || "").trim();
+}
+
+function patchLocalInspectionMemo(invoice, item, value) {
+  const code = inspectionMemoCode(item);
+  for (const inv of state.viewModel?.invoices || []) {
+    if (inv.invoiceNo !== invoice.invoiceNo && inv.orderGroupNo !== invoice.orderGroupNo) continue;
+    for (const row of inv.items || []) {
+      if (inspectionMemoCode(row) !== code) continue;
+      row.inspectionMemo = value || "";
+      if (row.raw) row.raw.insp_memo = value || "";
+    }
+  }
+  for (const inv of state.workflowQueues?.viewModel?.invoices || []) {
+    if (inv.invoiceNo !== invoice.invoiceNo && inv.orderGroupNo !== invoice.orderGroupNo) continue;
+    for (const row of inv.items || []) {
+      if (inspectionMemoCode(row) !== code) continue;
+      row.inspectionMemo = value || "";
+      if (row.raw) row.raw.insp_memo = value || "";
+    }
+  }
+}
+
+function patchLocalSellpiaOrderMemo(invoice, item, value) {
+  for (const inv of state.viewModel?.invoices || []) {
+    if (inv.orderGroupNo !== invoice.orderGroupNo) continue;
+    for (const row of inv.items || []) {
+      if (String(row.sellpiaItemNo || "") !== String(item.sellpiaItemNo || "")) continue;
+      if (row.raw) row.raw.order_memo = value || "";
+    }
+  }
+  for (const inv of state.workflowQueues?.viewModel?.invoices || []) {
+    if (inv.orderGroupNo !== invoice.orderGroupNo) continue;
+    for (const row of inv.items || []) {
+      if (String(row.sellpiaItemNo || "") !== String(item.sellpiaItemNo || "")) continue;
+      if (row.raw) row.raw.order_memo = value || "";
+    }
+  }
 }
 
 function buildPlannedPrintCsvRows() {
@@ -3070,6 +3133,90 @@ async function saveSelectedShortageMemo(shortageKey = state.selectedShortageKey)
   toast("미송 메모 저장 완료");
 }
 
+function findInspectionInvoiceItem(orderGroupNo, sellpiaItemNo) {
+  const groupNo = String(orderGroupNo || "");
+  const itemNo = String(sellpiaItemNo || "");
+  const invoices = [
+    ...(state.viewModel?.invoices || []),
+    ...(state.workflowQueues?.viewModel?.invoices || []),
+    ...(state.workflowQueues?.inspectionInvoices || []),
+    ...(state.workflowQueues?.inspectionCompletedInvoices || []),
+  ];
+  for (const invoice of invoices) {
+    if (String(invoice.orderGroupNo || "") !== groupNo) continue;
+    const item = (invoice.items || []).find((entry) => String(entry.sellpiaItemNo || "") === itemNo);
+    if (item) return { invoice, item };
+  }
+  return { invoice: null, item: null };
+}
+
+async function saveInspectionSellpiaOrderMemo(orderGroupNo, sellpiaItemNo, value) {
+  if (!allowWrites) {
+    toast("읽기전용입니다. 셀피아 주문메모 저장은 ?write=1에서 가능합니다.");
+    return;
+  }
+  const { invoice, item } = findInspectionInvoiceItem(orderGroupNo, sellpiaItemNo);
+  if (!invoice || !item) {
+    toast("셀피아 주문메모 저장 대상을 찾지 못했습니다.");
+    return;
+  }
+  const nextValue = String(value || "");
+  const buildQuery = (patch) => {
+    let query = db.from("order_items").update(patch).eq("ord_no", invoice.orderGroupNo);
+    if (item.sellpiaItemNo) query = query.eq("item_no", item.sellpiaItemNo);
+    else query = query.eq("sort_order", item.sortOrder || item.itemOrderIndex || 0);
+    return query;
+  };
+  let { error } = await buildQuery({ order_memo: nextValue, order_memo_updated_at: new Date().toISOString() });
+  if (error && /order_memo_updated_at|column|schema cache/i.test(error.message || "")) {
+    ({ error } = await buildQuery({ order_memo: nextValue }));
+  }
+  if (error) {
+    toast(`셀피아 주문메모 저장 실패: ${error.message}`);
+    throw error;
+  }
+  patchLocalSellpiaOrderMemo(invoice, item, nextValue);
+  toast("셀피아 주문메모 저장");
+}
+
+async function saveInspectionConfirmMemo(orderGroupNo, sellpiaItemNo, value) {
+  if (!allowWrites) {
+    toast("읽기전용입니다. 상품 확인메모 저장은 ?write=1에서 가능합니다.");
+    return;
+  }
+  const { invoice, item } = findInspectionInvoiceItem(orderGroupNo, sellpiaItemNo);
+  if (!invoice || !item) {
+    toast("상품 확인메모 저장 대상을 찾지 못했습니다.");
+    return;
+  }
+  const code = inspectionMemoCode(item);
+  if (!code) {
+    toast("셀피아코드가 없어 상품 확인메모를 저장할 수 없습니다.");
+    return;
+  }
+  const nextValue = String(value || "").trim();
+  const row = {
+    inv_no: invoice.invoiceNo || "",
+    ord_no: invoice.orderGroupNo,
+    item_no: item.sellpiaItemNo || "",
+    p_code: code,
+    insp_memo: nextValue,
+    memo_updated_at: new Date().toISOString(),
+  };
+  let { error } = await db.from("inspection").upsert(row, { onConflict: "inv_no,p_code" });
+  if (error && /memo_updated_at|column|schema cache/i.test(error.message || "")) {
+    const { memo_updated_at, ...fallbackRow } = row;
+    void memo_updated_at;
+    ({ error } = await db.from("inspection").upsert(fallbackRow, { onConflict: "inv_no,p_code" }));
+  }
+  if (error) {
+    toast(`상품 확인메모 저장 실패: ${error.message}`);
+    throw error;
+  }
+  patchLocalInspectionMemo(invoice, item, nextValue);
+  toast("상품 확인메모 저장");
+}
+
 function selectedInspectionInvoice(orderGroupNo = state.selectedInspectionGroup) {
   return (
     [...inspectionSourceInvoices(), ...(state.workflowQueues?.inspectionCompletedInvoices || [])].find((invoice) => invoice.orderGroupNo === orderGroupNo) ||
@@ -3383,16 +3530,48 @@ async function loadPickingData() {
     : [];
   const pickingRows = orderNos.length ? await fetchAllRows(() => db.from("picking").select("*").in("ord_no", orderNos)) : [];
   const shortageRows = orderNos.length ? await fetchAllRows(() => db.from("shortage").select("*").in("ord_no", orderNos)) : [];
+  const inspectionRows = orderNos.length ? await loadInspectionMemoRows(orderNos) : [];
+  const itemsWithInspectionMemos = applyInspectionMemos(items, inspectionRows);
 
   state.viewModel = buildPickingViewModel({
     orders,
-    orderItems: items,
+    orderItems: itemsWithInspectionMemos,
     pickingRows,
     shortageRows,
   });
   rebuildGroups();
   render();
   await loadWorkflowData();
+}
+
+async function loadInspectionMemoRows(orderNos) {
+  try {
+    return await fetchAllRows(() => db.from("inspection").select("inv_no,ord_no,item_no,p_code,insp_memo,memo_updated_at").in("ord_no", orderNos));
+  } catch (error) {
+    console.warn("inspection memo load skipped", error);
+    return [];
+  }
+}
+
+function applyInspectionMemos(items, memoRows) {
+  if (!memoRows?.length) return items;
+  const memoByKey = new Map();
+  for (const row of memoRows) {
+    const memo = String(row.insp_memo || "").trim();
+    if (!memo) continue;
+    const code = String(row.p_code || "").trim();
+    const ord = String(row.ord_no || "").trim();
+    const inv = String(row.inv_no || "").trim();
+    if (ord && code) memoByKey.set(`${ord}::${code}`, memo);
+    if (inv && code) memoByKey.set(`${inv}::${code}`, memo);
+  }
+  return items.map((item) => {
+    const code = String(item.p_code || item.sellpia_p_code || item.sellpia_product_code || item.prod_code || item.p_dpcode || "").trim();
+    const ord = String(item.ord_no || item.order_group_no || "").trim();
+    const inv = String(item.inv_no || item.dnum || "").trim();
+    const memo = memoByKey.get(`${ord}::${code}`) || memoByKey.get(`${inv}::${code}`) || "";
+    return memo ? { ...item, insp_memo: memo } : item;
+  });
 }
 
 async function loadWorkflowData() {
@@ -3842,6 +4021,23 @@ function bindEvents() {
     if (!button) return;
     state.selectedInspectionGroup = button.dataset.inspectionGroup;
     renderInspectionPanels();
+  });
+  els.inspectionDetail?.addEventListener("input", (event) => {
+    const field = event.target.closest("[data-inspection-memo-field]");
+    if (!field) return;
+    field.closest(".inspection-memo-cell")?.classList.toggle("has-value", Boolean(field.value.trim()));
+  });
+  els.inspectionDetail?.addEventListener("change", (event) => {
+    const field = event.target.closest("[data-inspection-memo-field]");
+    if (!field) return;
+    const orderGroupNo = field.dataset.orderGroup || "";
+    const itemNo = field.dataset.itemNo || "";
+    if (field.dataset.inspectionMemoField === "sellpia-order") {
+      saveInspectionSellpiaOrderMemo(orderGroupNo, itemNo, field.value).catch(showError);
+    }
+    if (field.dataset.inspectionMemoField === "confirm") {
+      saveInspectionConfirmMemo(orderGroupNo, itemNo, field.value).catch(showError);
+    }
   });
   els.inspectionDetail?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-action]");

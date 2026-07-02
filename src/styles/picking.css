@@ -1600,6 +1600,13 @@ input {
   min-width: 0;
 }
 
+.inspection-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .inspection-title-block strong {
   color: #111827;
   font-size: 28px;
@@ -1610,6 +1617,14 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.inspection-slot-badge {
+  padding: 6px 10px;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .inspection-actions > button[disabled]:not([data-action]) {
@@ -1649,9 +1664,9 @@ input {
 }
 
 .inspection-item-table .workflow-item-row {
-  min-width: 1330px;
+  min-width: 1880px;
   min-height: 154px;
-  grid-template-columns: 52px 168px 420px 50px 300px 84px 148px 92px 74px 86px;
+  grid-template-columns: 52px 168px 380px 50px 260px 84px 148px 92px 74px 180px 180px 96px;
   gap: 10px;
   padding: 10px 12px;
 }
@@ -1762,6 +1777,44 @@ input {
 
 .workflow-shortage-cell {
   color: var(--red) !important;
+}
+
+.inspection-memo-cell {
+  display: block;
+  min-width: 0;
+}
+
+.inspection-memo-cell textarea {
+  width: 100%;
+  min-height: 82px;
+  max-height: 118px;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #1a2840;
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.3;
+  outline: none;
+}
+
+.inspection-memo-cell textarea:focus {
+  border-color: #7ca7f8;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.inspection-memo-cell.has-value textarea {
+  border-color: #b7d2ff;
+  background: #f3f8ff;
+}
+
+.inspection-memo-cell textarea[readonly] {
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .workflow-item-row b {
