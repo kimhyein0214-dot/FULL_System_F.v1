@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pretendard/1.3.9/static/pretendard.css">
-    <link rel="stylesheet" href="src/styles/picking.css?v=20260702-tab-fast1">
+    <link rel="stylesheet" href="src/styles/picking.css?v=20260702-guard-enrich1">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   </head>
   <body>
@@ -118,7 +118,7 @@
                 <button class="btn primary" data-dashboard-action="reorder-invoices" type="button">송장순서 재정렬</button>
                 <button class="btn" data-dashboard-action="planned-print-csv" type="button">출력대상</button>
                 <button class="btn" data-dashboard-action="toggle-csv" type="button">토글 CSV</button>
-                <button class="btn" disabled>보강현황</button>
+                <button class="btn" data-dashboard-action="postoffice-status" type="button">보강현황</button>
                 <button class="btn" data-dashboard-action="order-list" type="button">주문리스트</button>
               </div>
               <p>운영 화면이 복잡해지지 않도록 보조 버튼은 이 탭으로 옮길 예정입니다.</p>
@@ -269,6 +269,6 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="src/app/pickingApp.mjs?v=20260702-tab-fast1"></script>
+    <script type="module" src="src/app/pickingApp.mjs?v=20260702-guard-enrich1"></script>
   </body>
 </html>

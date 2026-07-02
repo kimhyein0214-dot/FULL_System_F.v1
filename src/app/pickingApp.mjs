@@ -10,7 +10,7 @@ const JO_SIZE = 4;
 const params = new URLSearchParams(location.search);
 const allowWrites = params.get("write") === "1";
 const allowOrderReorder = allowWrites && params.get("reorder") !== "0";
-const allowWorkflowEvents = params.get("events") !== "0";
+const allowWorkflowEvents = allowWrites && params.get("events") === "1";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 function todayDateString() {
@@ -948,10 +948,10 @@ function renderMetrics() {
   els.metricPicked.textContent = String(items.filter(isPicked).length);
   els.metricShortage.textContent = String(items.filter((item) => shortageQty(item) > 0).length);
   els.metricHold.textContent = String(items.filter(isHold).length);
-  els.metricWrite.textContent = allowWorkflowEvents ? "EVENT" : allowWrites ? "ON" : "OFF";
+  els.metricWrite.textContent = allowWrites ? "ON" : "OFF";
   const workflow = workflowSummary();
-  if (workflow.ready || state.workflowQueueError) els.metricEvents.textContent = workflow.status;
-  else if (!allowWorkflowEvents) els.metricEvents.textContent = "OFF";
+  if (!allowWorkflowEvents) els.metricEvents.textContent = "OFF";
+  else if (workflow.ready || state.workflowQueueError) els.metricEvents.textContent = workflow.status;
   else if (!state.workflowEventsChecked) els.metricEvents.textContent = "대기";
   else els.metricEvents.textContent = state.workflowEventsReady ? "ON" : "미준비";
 }
@@ -2354,6 +2354,64 @@ function validateToggleCsvRows(rows) {
   return stats;
 }
 
+function showPostOfficeEnrichmentStatus() {
+  if (!state.viewModel?.invoices?.length) {
+    toast("보강현황 대상 주문이 없습니다.");
+    return;
+  }
+
+  const invoices = exportOrderedInvoices();
+  const rows = buildToggleCsvRows();
+  const stats = validateToggleCsvRows(rows);
+  let enriched = 0;
+  let missingAddress = 0;
+  let missingTel = 0;
+  let missingZip = 0;
+  let missingMobile = 0;
+  let missingMemo = 0;
+  let missingOrderNo = 0;
+
+  invoices.forEach((invoice) => {
+    if (firstRawText(invoice.raw, "enriched_at", "postoffice_enriched_at")) enriched += 1;
+    if (!invoiceAddress(invoice)) missingAddress += 1;
+    if (!invoiceReceiverTel(invoice) && !invoiceReceiverMobile(invoice)) missingTel += 1;
+    if (!invoiceReceiverMobile(invoice)) missingMobile += 1;
+    if (!invoiceZipcode(invoice)) missingZip += 1;
+    if (!itemOrderMemo(invoice, (invoice.items || [])[0] || {})) missingMemo += 1;
+    if (!String(invoice.orderGroupNo || "").trim()) missingOrderNo += 1;
+  });
+
+  const message = [
+    "토글 등록 CSV 준비 현황",
+    "",
+    `총 주문: ${invoices.length}`,
+    `CSV 상품행: ${stats.total}`,
+    `보강 완료(enriched_at): ${enriched}`,
+    `주소 누락: ${missingAddress}`,
+    `연락처(전화/핸드폰 모두) 누락: ${missingTel}`,
+    `핸드폰 누락: ${missingMobile}`,
+    `우편번호 누락: ${missingZip}`,
+    `주문메모 누락: ${missingMemo}`,
+    `주문번호 누락: ${missingOrderNo}`,
+    `주문품목No 누락: ${stats.missingItemNo}`,
+    `주문번호로 잘못 들어간 품목No: ${stats.badItemNo}`,
+    `필수정보 누락 상품행: ${stats.missingRequired}`,
+  ].join("\n");
+
+  console.log("[TOGLE] registration CSV status", {
+    totalOrders: invoices.length,
+    enriched,
+    missingAddress,
+    missingTel,
+    missingMobile,
+    missingZip,
+    missingMemo,
+    missingOrderNo,
+    csvStats: stats,
+  });
+  window.alert(message);
+}
+
 function exportToggleCsv() {
   if (!state.viewModel?.invoices?.length) {
     toast("토글 CSV 대상이 없습니다.");
@@ -3495,6 +3553,9 @@ function bindEvents() {
     }
     if (button.dataset.dashboardAction === "planned-print-csv") {
       exportPlannedPrintCsv();
+    }
+    if (button.dataset.dashboardAction === "postoffice-status") {
+      showPostOfficeEnrichmentStatus();
     }
     if (button.dataset.dashboardAction === "order-list") {
       openOrderListModal();

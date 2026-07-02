@@ -71,8 +71,8 @@ Do not remove the current `shortage` table yet. First run F.v1 in parallel:
 
 | URL flag | Effect |
 | --- | --- |
-| `?write=1` | Allows the standalone picking tab to write to the existing `picking` table. |
-| `?write=1&events=1` | Also attempts to insert workflow item events. If event tables are not prepared, picking save still succeeds and the event failure is only reported as a warning. |
+| `?write=1` | Allows the standalone picking tab to write to the existing `picking` table. Workflow event writes remain disabled. |
+| `?write=1&events=1` | Enables workflow item/invoice event inserts. If event tables are not prepared, picking save still succeeds and the event failure is only reported as a warning. |
 
 ## What The Operator Must Do
 
