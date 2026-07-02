@@ -1946,7 +1946,10 @@ function renderInspectionPanels(options = {}) {
   const seller = sellerBadgeMeta(selected.seller);
   const invoiceState = workflowInvoiceState(selected);
   const selectedCompleted = Boolean(invoiceState?.inspected);
+  const selectedHeld = Boolean(invoiceState?.hold);
   const actionDisabled = allowWorkflowEvents ? "" : "disabled";
+  const completeDisabled = !allowWorkflowEvents || (selectedHeld && !selectedCompleted) ? "disabled" : "";
+  const completeTitle = selectedHeld && !selectedCompleted ? 'title="보류 송장은 보류 해제 후 완료 처리할 수 있습니다."' : "";
   const holdAction = invoiceState?.hold ? "inspection-hold-release" : "inspection-hold";
   const holdLabel = invoiceState?.hold ? "보류 해제" : "보류 처리";
   const selectedRepicked = (selected.items || []).filter((item) => {
@@ -1971,7 +1974,7 @@ function renderInspectionPanels(options = {}) {
       <div class="inspection-actions">
         <span class="invoice-badge inspection-slot-badge">${escapeHtml(invoiceGroupSlotLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</span>
         <button class="btn" data-action="${holdAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${holdLabel}</button>
-        <button class="btn primary" data-action="${completeAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${completeLabel}</button>
+        <button class="btn primary" data-action="${completeAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${completeDisabled} ${completeTitle}>${completeLabel}</button>
         ${selectedCompleted ? '<span class="workflow-row-badge done">완료</span>' : ""}
         ${invoiceHasGold(selected) ? '<span class="workflow-row-badge gold">골드</span>' : ""}
         ${selectedRepicked ? `<span class="workflow-row-badge warn">미송 ${selectedRepicked}</span>` : ""}
@@ -2132,7 +2135,7 @@ function allCsRows() {
       const qty = Number(itemState?.shortageQty || shortageQty(item) || 0);
       const started = csShortageStartEvent(invoice, item);
       if (!started && qty <= 0 && !itemState?.shortageRepicked) continue;
-      const date = dateKey(started?.event_at || started?.created_at || itemState?.lastEventAt || invoice.receiptDate || state.selectedDate);
+      const date = dateKey(invoice.receiptDate);
       rows.push({
         key: csRowKey(invoice, item),
         invoice,
@@ -2611,7 +2614,7 @@ function shortageEventType(prev, next) {
 
 function buildItemEvent(invoice, item, eventType, overrides = {}) {
   return {
-    receipt_date: invoice.receiptDate || state.selectedDate,
+    receipt_date: dateKey(invoice.receiptDate) || null,
     order_group_no: invoice.orderGroupNo,
     invoice_no: invoice.invoiceNo || "",
     sellpia_item_no: item.sellpiaItemNo,
@@ -2632,7 +2635,7 @@ function buildItemEvent(invoice, item, eventType, overrides = {}) {
 
 function buildInvoiceEvent(invoice, eventType, overrides = {}) {
   return {
-    receipt_date: invoice.receiptDate || state.selectedDate,
+    receipt_date: dateKey(invoice.receiptDate) || null,
     order_group_no: invoice.orderGroupNo,
     invoice_no: invoice.invoiceNo || "",
     event_type: eventType,
@@ -3090,7 +3093,7 @@ function buildToggleCsvRows() {
     (invoice.items || []).forEach((item) => {
       rows.push([
         invoice.orderGroupNo || "",
-        invoice.receiptDate || state.selectedDate,
+        invoice.receiptDate || "",
         itemSellpiaItemNo(item),
         itemSellerProductName(item),
         itemSellerOptionName(item),
@@ -3407,7 +3410,7 @@ function downloadLabelXlsx(filename, rows) {
 }
 
 function labelReceivedAtForItem(invoice, item) {
-  return invoice?.receiptDate || firstRawText(item.raw, "shortage_date", "ord_date", "receipt_date") || "";
+  return invoice?.receiptDate || firstRawText(item.raw, "receipt_date") || "";
 }
 
 function labelShortageRankKeysForRow(row) {
@@ -3790,6 +3793,10 @@ async function completeSelectedInspection(orderGroupNo = state.selectedInspectio
     toast("검품 대기 송장을 찾지 못했습니다.");
     return;
   }
+  if (workflowInvoiceState(invoice)?.hold) {
+    toast("보류 송장은 보류 해제 후 완료 처리할 수 있습니다.");
+    return;
+  }
   const ok = await saveWorkflowInvoiceEvent(invoice, "inspection_completed", { memo: "inspection completed" });
   if (!ok) return;
   state.activeTab = "inspection";
@@ -4051,12 +4058,9 @@ async function loadPickingData() {
     return next;
   };
 
-  const [receiptDateOrders, legacyOrdDateOrders] = await Promise.all([
-    fetchAllRows(() => buildOrderQuery(db.from("orders").select("*").eq("receipt_date", selectedDate))),
-    fetchAllRows(() => buildOrderQuery(db.from("orders").select("*").is("receipt_date", null).eq("ord_date", selectedDate))),
-  ]);
+  const receiptDateOrders = await fetchAllRows(() => buildOrderQuery(db.from("orders").select("*").eq("receipt_date", selectedDate)));
   const ordersByNo = new Map();
-  [...legacyOrdDateOrders, ...receiptDateOrders].forEach((row) => {
+  receiptDateOrders.forEach((row) => {
     const key = String(row.ord_no || "").trim();
     if (key) ordersByNo.set(key, row);
   });

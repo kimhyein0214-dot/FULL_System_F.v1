@@ -24,6 +24,26 @@ function uniqueTexts(values = []) {
   return [...new Set((values || []).map(text).filter(Boolean))];
 }
 
+function chunk(values = [], size = 300) {
+  const chunks = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function eventTime(row) {
+  return new Date(row.event_at || row.created_at || 0).getTime() || 0;
+}
+
+function eventId(row) {
+  return Number(row.id || 0);
+}
+
+function sortEvents(events = []) {
+  return [...events].sort((a, b) => eventTime(a) - eventTime(b) || eventId(a) - eventId(b));
+}
+
 async function fetchAllRows(makeQuery, pageSize = 1000) {
   const rows = [];
   for (let from = 0; ; from += pageSize) {
@@ -41,6 +61,17 @@ function applyOptionalIn(query, column, values) {
   return list.length ? query.in(column, list) : query;
 }
 
+async function fetchRowsByInChunks(makeQuery, column, values, pageSize = 1000) {
+  const list = uniqueTexts(values);
+  if (!list.length) return [];
+
+  const rows = [];
+  for (const nextChunk of chunk(list)) {
+    rows.push(...(await fetchAllRows(() => makeQuery().in(column, nextChunk), pageSize)));
+  }
+  return rows;
+}
+
 export function workflowOrderGroupNos({ itemEvents = [], invoiceEvents = [] } = {}) {
   return uniqueTexts([
     ...itemEvents.map((row) => row.order_group_no),
@@ -49,21 +80,22 @@ export function workflowOrderGroupNos({ itemEvents = [], invoiceEvents = [] } = 
 }
 
 export async function fetchWorkflowEvents(db, { orderGroupNos = null, pageSize = 1000 } = {}) {
-  const itemEvents = await fetchAllRows(
-    () =>
-      applyOptionalIn(db.from("workflow_item_events").select("*"), "order_group_no", orderGroupNos)
-        .order("event_at", { ascending: true })
-        .order("id", { ascending: true }),
-    pageSize,
-  );
+  const hasExplicitScope = orderGroupNos !== null && orderGroupNos !== undefined;
+  const scopedOrderGroupNos = uniqueTexts(orderGroupNos);
+  if (hasExplicitScope && !scopedOrderGroupNos.length) {
+    return { itemEvents: [], invoiceEvents: [] };
+  }
 
-  const invoiceEvents = await fetchAllRows(
-    () =>
-      applyOptionalIn(db.from("workflow_invoice_events").select("*"), "order_group_no", orderGroupNos)
-        .order("event_at", { ascending: true })
-        .order("id", { ascending: true }),
-    pageSize,
-  );
+  const itemQuery = () => db.from("workflow_item_events").select("*").order("event_at", { ascending: true }).order("id", { ascending: true });
+  const invoiceQuery = () => db.from("workflow_invoice_events").select("*").order("event_at", { ascending: true }).order("id", { ascending: true });
+
+  const itemEvents = scopedOrderGroupNos.length
+    ? sortEvents(await fetchRowsByInChunks(itemQuery, "order_group_no", scopedOrderGroupNos, pageSize))
+    : await fetchAllRows(() => applyOptionalIn(itemQuery(), "order_group_no", orderGroupNos), pageSize);
+
+  const invoiceEvents = scopedOrderGroupNos.length
+    ? sortEvents(await fetchRowsByInChunks(invoiceQuery, "order_group_no", scopedOrderGroupNos, pageSize))
+    : await fetchAllRows(() => applyOptionalIn(invoiceQuery(), "order_group_no", orderGroupNos), pageSize);
 
   return { itemEvents, invoiceEvents };
 }
@@ -94,7 +126,7 @@ function invoiceNo(row = {}) {
 }
 
 function receiptDate(row = {}) {
-  return firstText(row.receipt_date, row.ord_date);
+  return firstText(row.receipt_date);
 }
 
 function invoiceMemo1(row = {}) {
@@ -127,7 +159,7 @@ function isRepickDoneMemo(memo) {
 }
 
 function syntheticEventAt(row = {}) {
-  return firstText(row.updated_at, row.created_at, row.event_at, row.receipt_date, row.ord_date) || "1970-01-01T00:00:00Z";
+  return firstText(row.updated_at, row.created_at, row.event_at, row.receipt_date) || "1970-01-01T00:00:00Z";
 }
 
 export function buildSyntheticMemoEvents({ orders = [], orderItems = [] } = {}) {
@@ -211,34 +243,19 @@ export function buildWorkflowQueues({ orders = [], orderItems = [], itemEvents =
 }
 
 export async function loadWorkflowQueues(db, { pageSize = 1000 } = {}) {
-  const { itemEvents, invoiceEvents } = await fetchWorkflowEvents(db, { pageSize });
-
-  const legacyOrders = await fetchAllRows(
-    () => db.from("orders").select("*").order("receipt_date", { ascending: false, nullsFirst: false }).order("ord_date", { ascending: false, nullsFirst: false }),
+  const orders = await fetchAllRows(
+    () => db.from("orders").select("*").order("receipt_date", { ascending: false, nullsFirst: false }).order("sort_order", { ascending: true, nullsFirst: false }),
     pageSize,
   );
 
-  const legacyOrderItems = await fetchAllRows(
-    () => db.from("order_items").select("*").order("sort_order", { ascending: true, nullsFirst: false }),
-    pageSize,
-  );
-
-  const legacyEvents = buildSyntheticMemoEvents({ orders: legacyOrders, orderItems: legacyOrderItems });
-  const orderGroupNos = workflowOrderGroupNos({
-    itemEvents: [...legacyEvents.itemEvents, ...itemEvents],
-    invoiceEvents: [...legacyEvents.invoiceEvents, ...invoiceEvents],
-  });
-
-  const orders = orderGroupNos.length
-    ? await fetchAllRows(
-        () => db.from("orders").select("*").in("ord_no", orderGroupNos).order("sort_order", { ascending: true, nullsFirst: false }),
-        pageSize,
-      )
-    : [];
+  const orderGroupNos = uniqueTexts(orders.map(orderGroupNo));
+  const { itemEvents, invoiceEvents } = orderGroupNos.length ? await fetchWorkflowEvents(db, { orderGroupNos, pageSize }) : { itemEvents: [], invoiceEvents: [] };
 
   const orderItems = orderGroupNos.length
-    ? await fetchAllRows(
-        () => db.from("order_items").select("*").in("ord_no", orderGroupNos).order("sort_order", { ascending: true, nullsFirst: false }),
+    ? await fetchRowsByInChunks(
+        () => db.from("order_items").select("*").order("sort_order", { ascending: true, nullsFirst: false }),
+        "ord_no",
+        orderGroupNos,
         pageSize,
       )
     : [];

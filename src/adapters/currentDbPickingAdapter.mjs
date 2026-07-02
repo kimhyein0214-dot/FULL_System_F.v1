@@ -50,7 +50,7 @@ export function normalizeCurrentDbOrder(order = {}) {
     recipientPhone: firstText(order.receiver_mobile, order.receiver_tel, order.recipient_phone),
     buyerPhone: firstText(order.orderer_mobile, order.orderer_tel, order.buyer_phone),
     orderTotalAmount: firstNumber(order.sellpia_order_total_amount, order.order_total_amount),
-    receiptDate: firstText(order.receipt_date, order.ord_date),
+    receiptDate: firstText(order.receipt_date),
     sellpiaMemo1: firstText(order.o_shop_memo, order.shop_memo, order.memo1),
     orderMemo: firstText(order.order_memo, order.o_memo),
     session: firstText(order.am_pm, order.session, order.receipt_session),
