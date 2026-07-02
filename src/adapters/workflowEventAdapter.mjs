@@ -94,7 +94,7 @@ function invoiceNo(row = {}) {
 }
 
 function receiptDate(row = {}) {
-  return firstText(row.ord_date, row.receipt_date);
+  return firstText(row.receipt_date, row.ord_date);
 }
 
 function invoiceMemo1(row = {}) {
@@ -127,7 +127,7 @@ function isRepickDoneMemo(memo) {
 }
 
 function syntheticEventAt(row = {}) {
-  return firstText(row.updated_at, row.created_at, row.event_at, row.ord_date, row.receipt_date) || "1970-01-01T00:00:00Z";
+  return firstText(row.updated_at, row.created_at, row.event_at, row.receipt_date, row.ord_date) || "1970-01-01T00:00:00Z";
 }
 
 export function buildSyntheticMemoEvents({ orders = [], orderItems = [] } = {}) {
@@ -214,7 +214,7 @@ export async function loadWorkflowQueues(db, { pageSize = 1000 } = {}) {
   const { itemEvents, invoiceEvents } = await fetchWorkflowEvents(db, { pageSize });
 
   const legacyOrders = await fetchAllRows(
-    () => db.from("orders").select("*").order("ord_date", { ascending: false, nullsFirst: false }),
+    () => db.from("orders").select("*").order("receipt_date", { ascending: false, nullsFirst: false }).order("ord_date", { ascending: false, nullsFirst: false }),
     pageSize,
   );
 

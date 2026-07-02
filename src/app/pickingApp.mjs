@@ -2968,10 +2968,26 @@ async function loadPickingData() {
   const selectedDate = state.selectedDate;
   const session = state.session;
 
-  const orders = await fetchAllRows(() => {
-    let query = db.from("orders").select("*").eq("ord_date", selectedDate).order("sort_order", { ascending: true, nullsFirst: false });
-    if (session !== "ALL") query = query.eq("am_pm", session);
-    return query;
+  const buildOrderQuery = (query) => {
+    let next = query.order("sort_order", { ascending: true, nullsFirst: false });
+    if (session !== "ALL") next = next.eq("am_pm", session);
+    return next;
+  };
+
+  const [receiptDateOrders, legacyOrdDateOrders] = await Promise.all([
+    fetchAllRows(() => buildOrderQuery(db.from("orders").select("*").eq("receipt_date", selectedDate))),
+    fetchAllRows(() => buildOrderQuery(db.from("orders").select("*").is("receipt_date", null).eq("ord_date", selectedDate))),
+  ]);
+  const ordersByNo = new Map();
+  [...legacyOrdDateOrders, ...receiptDateOrders].forEach((row) => {
+    const key = String(row.ord_no || "").trim();
+    if (key) ordersByNo.set(key, row);
+  });
+  const orders = [...ordersByNo.values()].sort((a, b) => {
+    const left = Number(a.sort_order ?? Number.MAX_SAFE_INTEGER);
+    const right = Number(b.sort_order ?? Number.MAX_SAFE_INTEGER);
+    if (left !== right) return left - right;
+    return String(a.ord_no || "").localeCompare(String(b.ord_no || ""));
   });
 
   const orderNos = orders.map((row) => String(row.ord_no || "").trim()).filter(Boolean);
