@@ -304,6 +304,224 @@ function workflowOrderedInvoices() {
   return orderedInvoicesForSystemSequence(state.workflowQueues?.viewModel?.invoices || []);
 }
 
+function normalizeRouteCode(value) {
+  return String(value || "").trim().replace(/^\[|\]$/g, "").toUpperCase();
+}
+
+function exportRouteBaseCode(value) {
+  const raw = String(value || "").trim().replace(/^낱/i, "").toUpperCase();
+  const bracket = raw.match(/^\[([A-Z]+)\]\s*([A-Z])/);
+  if (bracket) {
+    const zone = bracket[1].trim();
+    const aisle = bracket[2].trim();
+    if (zone === "P" || zone === "E" || zone === "H") return zone + aisle;
+    return zone;
+  }
+  return normalizeRouteCode(raw).replace(/^낱/i, "").replace(/[\]\s]+/g, "");
+}
+
+const EXPORT_ROUTE_ORDER = [
+  "CA",
+  "PS",
+  "PT",
+  "PQ",
+  "PR",
+  "PO",
+  "PP",
+  "PM",
+  "PN",
+  "PG",
+  "PH",
+  "PE",
+  "PF",
+  "PC",
+  "PD",
+  "PA",
+  "PB",
+  "PK",
+  "PL",
+  "PI",
+  "PJ",
+  "EF",
+  "EE",
+  "SA",
+  "RA",
+  "NA",
+  "BA",
+  "HD",
+  "HC",
+  "HB",
+  "HA",
+  "EC",
+  "ED",
+  "EB",
+  "EA",
+];
+const EXPORT_ROUTE_RANK = EXPORT_ROUTE_ORDER.reduce((map, code, index) => {
+  map[code] = index;
+  return map;
+}, {});
+
+function exportRouteRank(value) {
+  const code = exportRouteBaseCode(value);
+  if (!code) return 9999;
+  if (EXPORT_ROUTE_RANK[code] !== undefined) return EXPORT_ROUTE_RANK[code];
+  const prefix2 = code.slice(0, 2);
+  if (EXPORT_ROUTE_RANK[prefix2] !== undefined) return EXPORT_ROUTE_RANK[prefix2];
+  const first = code.charAt(0);
+  if (first === "P") return 900;
+  if (first === "E") return 920;
+  if (/^[HNRSB]/.test(first)) return 940;
+  return 9999;
+}
+
+function compareExportRouteCode(a, b) {
+  const aRank = exportRouteRank(a);
+  const bRank = exportRouteRank(b);
+  if (aRank !== bRank) return aRank - bRank;
+  return String(exportRouteBaseCode(a)).localeCompare(String(exportRouteBaseCode(b)), "en", { numeric: true, sensitivity: "base" });
+}
+
+function exportRouteMetrics(codes = []) {
+  const ranks = (codes || []).map(exportRouteRank).filter((number) => Number.isFinite(number) && number < 9999);
+  const startRank = ranks.length ? Math.min(...ranks) : 9999;
+  const endRank = ranks.length ? Math.max(...ranks) : 9999;
+  const routeSpan = ranks.length ? endRank - startRank : 9999;
+  const primaryRouteCode = (codes || []).filter(Boolean).sort(compareExportRouteCode)[0] || "";
+  return {
+    startRank,
+    endRank,
+    routeSpan,
+    routeZoneSpread: new Set(ranks).size || 1,
+    primaryRouteCode,
+  };
+}
+
+function exportOriginalRank(invoice, fallback) {
+  const rawRank = firstRawText(invoice.raw, "sellpia_seq_no", "original_seq_no", "print_seq_no", "sort_order");
+  const number = Number(String(rawRank || invoice.sortOrder || fallback || 0).replace(/,/g, ""));
+  return Number.isFinite(number) && number > 0 ? number : Number(fallback) || 0;
+}
+
+function exportSortMetrics(invoice) {
+  const items = invoice.items || [];
+  const itemKindCount = new Set(items.map((item) => item.ownCode || item.sellpiaProductCode).filter(Boolean)).size;
+  const totalItemQty = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+  const hasShortage = items.some((item) => {
+    const memoShortage = parseInt(String(item.sellpiaMemo2 || "").replace(/[^0-9-]/g, ""), 10) || 0;
+    return memoShortage > 0 || shortageQty(item) > 0;
+  });
+  const hasHold =
+    Boolean(invoice.raw?.hold || invoice.raw?.is_hold || invoice.raw?.shipping_hold || workflowInvoiceState(invoice)?.hold) ||
+    items.some(isHold);
+  const routeCodes = items.map((item) => normalizeRouteCode(item.ownCode || item.sellpiaProductCode)).filter(Boolean);
+  const route = exportRouteMetrics(routeCodes);
+  return {
+    itemKindCount: itemKindCount || 0,
+    totalItemQty: totalItemQty || 0,
+    hasGoldItem: invoiceHasGold(invoice),
+    hasShortage,
+    hasHold,
+    routeZoneRank: route.startRank,
+    routeZoneSpread: route.routeZoneSpread,
+    primaryRouteCode: route.primaryRouteCode,
+    startRank: route.startRank,
+    endRank: route.endRank,
+    routeSpan: route.routeSpan,
+  };
+}
+
+function exportProblemRank(metrics = {}) {
+  if (metrics.hasHold) return 2;
+  if (metrics.hasGoldItem) return 1;
+  return 0;
+}
+
+function compareExportInvoices(a, b) {
+  const aMetrics = a._exportSortMetrics || {};
+  const bMetrics = b._exportSortMetrics || {};
+  const aProblem = exportProblemRank(aMetrics);
+  const bProblem = exportProblemRank(bMetrics);
+  if (aProblem !== bProblem) return aProblem - bProblem;
+  if ((aMetrics.itemKindCount || 0) !== (bMetrics.itemKindCount || 0)) return (aMetrics.itemKindCount || 0) - (bMetrics.itemKindCount || 0);
+  if ((aMetrics.routeZoneRank ?? 9999) !== (bMetrics.routeZoneRank ?? 9999)) return (aMetrics.routeZoneRank ?? 9999) - (bMetrics.routeZoneRank ?? 9999);
+  if ((aMetrics.routeSpan ?? 9999) !== (bMetrics.routeSpan ?? 9999)) return (aMetrics.routeSpan ?? 9999) - (bMetrics.routeSpan ?? 9999);
+  if ((aMetrics.routeZoneSpread || 1) !== (bMetrics.routeZoneSpread || 1)) return (aMetrics.routeZoneSpread || 1) - (bMetrics.routeZoneSpread || 1);
+  if ((aMetrics.totalItemQty || 0) !== (bMetrics.totalItemQty || 0)) return (aMetrics.totalItemQty || 0) - (bMetrics.totalItemQty || 0);
+  const codeCompare = String(aMetrics.primaryRouteCode || "").localeCompare(String(bMetrics.primaryRouteCode || ""), "en", {
+    numeric: true,
+    sensitivity: "base",
+  });
+  if (codeCompare !== 0) return codeCompare;
+  return (a._exportOriginalRank || 0) - (b._exportOriginalRank || 0);
+}
+
+function compareExportInvoicesWithinKind(a, b) {
+  const aMetrics = a._exportSortMetrics || {};
+  const bMetrics = b._exportSortMetrics || {};
+  const aProblem = exportProblemRank(aMetrics);
+  const bProblem = exportProblemRank(bMetrics);
+  if (aProblem !== bProblem) return aProblem - bProblem;
+  if ((aMetrics.routeZoneRank ?? 9999) !== (bMetrics.routeZoneRank ?? 9999)) return (aMetrics.routeZoneRank ?? 9999) - (bMetrics.routeZoneRank ?? 9999);
+  if ((aMetrics.routeSpan ?? 9999) !== (bMetrics.routeSpan ?? 9999)) return (aMetrics.routeSpan ?? 9999) - (bMetrics.routeSpan ?? 9999);
+  if ((aMetrics.routeZoneSpread || 1) !== (bMetrics.routeZoneSpread || 1)) return (aMetrics.routeZoneSpread || 1) - (bMetrics.routeZoneSpread || 1);
+  if ((aMetrics.totalItemQty || 0) !== (bMetrics.totalItemQty || 0)) return (aMetrics.totalItemQty || 0) - (bMetrics.totalItemQty || 0);
+  return (a._exportOriginalRank || 0) - (b._exportOriginalRank || 0);
+}
+
+function buildRouteOptimizedExportInvoices(invoices) {
+  const buckets = new Map();
+  [...invoices].sort(compareExportInvoices).forEach((invoice) => {
+    const metrics = invoice._exportSortMetrics || {};
+    const key = [exportProblemRank(metrics), metrics.itemKindCount || 0].join("|");
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(invoice);
+  });
+
+  const result = [];
+  [...buckets.entries()]
+    .sort((a, b) => {
+      const [aProblem, aKind] = a[0].split("|").map(Number);
+      const [bProblem, bKind] = b[0].split("|").map(Number);
+      return aProblem - bProblem || aKind - bKind;
+    })
+    .forEach(([, bucket]) => {
+      const sorted = [...bucket].sort(compareExportInvoicesWithinKind);
+      const batches = [];
+      for (let index = 0; index < sorted.length; index += JO_SIZE) {
+        const orders = sorted.slice(index, index + JO_SIZE);
+        const starts = orders.map((invoice) => invoice._exportSortMetrics?.startRank ?? 9999);
+        const ends = orders.map((invoice) => invoice._exportSortMetrics?.endRank ?? 9999);
+        batches.push({ orders, start: Math.min(...starts), end: Math.max(...ends) });
+      }
+      let prevEnd = result.length ? (result[result.length - 1]._exportSortMetrics?.endRank ?? 0) : 0;
+      while (batches.length) {
+        let bestIndex = 0;
+        let bestScore = Infinity;
+        batches.forEach((batch, index) => {
+          const score = Math.abs((batch.start ?? 9999) - prevEnd);
+          if (score < bestScore) {
+            bestScore = score;
+            bestIndex = index;
+          }
+        });
+        const [next] = batches.splice(bestIndex, 1);
+        result.push(...next.orders.sort(compareExportInvoicesWithinKind));
+        prevEnd = next.end;
+      }
+    });
+  return result;
+}
+
+function exportOrderedInvoices(invoices = state.viewModel?.invoices || []) {
+  const rows = (invoices || []).map((invoice, index) => ({
+    ...invoice,
+    _exportOriginalRank: exportOriginalRank(invoice, index + 1),
+    _exportSortMetrics: exportSortMetrics(invoice),
+  }));
+  return buildRouteOptimizedExportInvoices(rows).map((invoice, index) => ({ ...invoice, plannedPrintSeqNo: index + 1 }));
+}
+
 function sortInspectionInvoices(invoices) {
   return [...(invoices || [])].sort((a, b) => {
     const aGold = invoiceHasGold(a);
@@ -1841,22 +2059,48 @@ function itemSellerOptionName(item) {
   return firstRawText(item.raw, "seller_option_name", "seller_p_option", "mall_option_name") || item.optionName || "";
 }
 
+function itemSellpiaItemNo(item) {
+  return firstRawText(item.raw, "item_no", "sellpia_item_no", "order_item_no") || item.sellpiaItemNo || "";
+}
+
+function isSellerOrderMemoLine(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const normalized = text.replace(/\s+/g, "");
+  if (/^(판매처)?주문번호[:：-]?[A-Za-z0-9_-]{8,}$/.test(normalized)) return true;
+  if (/^(에이블리|쿠팡|플레이오토|playauto|ably|coupang)[:：-]?[A-Za-z0-9_-]{8,}$/i.test(normalized)) return true;
+  return /^[0-9]{8,}$/.test(normalized.replace(/[-_]/g, ""));
+}
+
+function cleanSellpiaManageMemo(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !isSellerOrderMemoLine(line))
+    .join("\n");
+}
+
+function itemOrderMemo(invoice, item) {
+  return cleanSellpiaManageMemo(firstRawText(item.raw, "order_memo", "o_memo", "memo") || invoice.orderMemo || "");
+}
+
 function buildPlannedPrintCsvRows() {
   const headers = ["작업번호", "송장번호", "셀피아순번", "주문자", "수취인", "상품종류수", "총수량", "골드포함", "부족/미송", "배송보류"];
   const rows = [headers];
-  workOrderedInvoices().forEach((invoice, index) => {
+  exportOrderedInvoices().forEach((invoice, index) => {
     const stats = invoiceStats(invoice);
+    const metrics = invoice._exportSortMetrics || {};
     rows.push([
-      visibleInvoiceSequenceNo(invoice, index),
+      invoice.plannedPrintSeqNo || index + 1,
       invoice.invoiceNo || "",
       invoice.raw?.sellpia_seq_no || invoice.raw?.original_seq_no || invoice.raw?.sort_order || invoice.sortOrder || "",
       invoice.buyerName || invoice.displayName || "",
       invoice.recipientName || invoice.csDisplayName || invoice.displayName || "",
-      stats.total,
-      stats.qty,
-      invoiceHasGold(invoice) ? "Y" : "",
-      stats.shortage > 0 ? "Y" : "",
-      stats.hold > 0 || workflowInvoiceState(invoice)?.hold ? "Y" : "",
+      metrics.itemKindCount || stats.total,
+      metrics.totalItemQty || stats.qty,
+      metrics.hasGoldItem ? "Y" : "",
+      metrics.hasShortage ? "Y" : "",
+      metrics.hasHold ? "Y" : "",
     ]);
   });
   return rows;
@@ -1911,12 +2155,12 @@ function buildToggleCsvRows() {
     "주문메모",
   ];
   const rows = [headers];
-  workOrderedInvoices().forEach((invoice) => {
+  exportOrderedInvoices().forEach((invoice) => {
     (invoice.items || []).forEach((item) => {
       rows.push([
         invoice.orderGroupNo || "",
         invoice.receiptDate || state.selectedDate,
-        item.sellpiaItemNo || "",
+        itemSellpiaItemNo(item),
         itemSellerProductName(item),
         itemSellerOptionName(item),
         item.quantity || 1,
@@ -1925,7 +2169,7 @@ function buildToggleCsvRows() {
         invoiceReceiverMobile(invoice),
         invoiceZipcode(invoice),
         invoiceAddress(invoice),
-        firstRawText(item.raw, "order_memo", "o_memo", "memo") || invoice.orderMemo || "",
+        itemOrderMemo(invoice, item),
       ]);
     });
   });
@@ -1981,6 +2225,242 @@ function exportToggleCsv() {
   }
   downloadCsv(`togle_registration_${timestampForFilename()}.csv`, rows);
   toast(`토글 CSV ${rows.length - 1}행 다운로드`);
+}
+
+const LABEL_CSV_HEADER = ["라벨번호", "상품코드", "자사코드", "판매처 상품명", "판매처 옵션명", "수량", "접수일자", "수취인"];
+const LABEL_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+function createLabelExportStats() {
+  return {
+    originalRows: 0,
+    targetRows: 0,
+    finalRows: 0,
+    invalidQtyDefaulted: 0,
+    skipped: {
+      noPrivateCode: 0,
+      caExcluded: 0,
+      notGp: 0,
+      optionFailed: 0,
+      qtyZero: 0,
+      printed: 0,
+      duplicateKey: 0,
+    },
+  };
+}
+
+function addLabelSkip(stats, reason) {
+  if (stats?.skipped && Object.prototype.hasOwnProperty.call(stats.skipped, reason)) stats.skipped[reason] += 1;
+}
+
+function normalizePrivateCode(rawCode) {
+  const raw = String(rawCode || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/\[[^\]]+\]/);
+  return match ? match[0].trim() : "";
+}
+
+function getLabelTargetResult(row, stats) {
+  const raw = String(row?.privateCode ?? row?.prodCode ?? row?.code ?? "").trim();
+  if (!raw) {
+    addLabelSkip(stats, "noPrivateCode");
+    return { ok: false, code: "" };
+  }
+  const normalized = normalizePrivateCode(raw);
+  if (/^\[CA/i.test(raw) || /^\[CA/i.test(normalized)) {
+    addLabelSkip(stats, "caExcluded");
+    return { ok: false, code: normalized };
+  }
+  if (!normalized || !/^\[GP/i.test(normalized)) {
+    addLabelSkip(stats, "notGp");
+    return { ok: false, code: normalized };
+  }
+  return { ok: true, code: normalized };
+}
+
+function isLabelTarget(row) {
+  return getLabelTargetResult(row, null).ok;
+}
+
+function normalizeProductName(productCode, productName) {
+  if (String(productCode || "").trim().startsWith("6778")) return "14K 골드 볼 피어싱 0.8mm 24종";
+  return String(productName || "").trim();
+}
+
+function formatCsvTextCell(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  return `="${text.replace(/"/g, '""')}"`;
+}
+
+function normalizeLabelOptionName(optionName) {
+  let value = String(optionName || "").trim();
+  if (value.includes(":")) value = value.split(":").pop();
+  if (value.includes("[")) value = value.split("[")[0];
+  return value.trim();
+}
+
+function getLabelWeekday(receivedAt) {
+  const raw = String(receivedAt || state.selectedDate || "").trim();
+  const compact = raw.match(/^(\d{4})-?(\d{2})-?(\d{2})/);
+  const date = compact ? new Date(Number(compact[1]), Number(compact[2]) - 1, Number(compact[3])) : new Date(raw);
+  if (Number.isNaN(date.getTime())) return LABEL_WEEKDAYS[new Date().getDay()];
+  return LABEL_WEEKDAYS[date.getDay()];
+}
+
+function makeLabelKey(row, privateCode, optionName, unitIndex) {
+  return [
+    String(row?.invNo || row?.orderNo || "").trim(),
+    String(row?.productCode || "").trim(),
+    String(privateCode || "").trim(),
+    String(optionName || "").trim(),
+    String(row?.receivedAt || "").trim(),
+    String(unitIndex),
+  ].join("|");
+}
+
+function getPrintedLabelKeys() {
+  return new Set();
+}
+
+function expandRowsByQty(row, stats) {
+  const rawQty = String(row?.qty ?? "").replace(/,/g, "").trim();
+  let qty = parseInt(rawQty, 10);
+  if (!Number.isFinite(qty)) {
+    qty = 1;
+    if (stats) stats.invalidQtyDefaulted += 1;
+  }
+  if (qty <= 0) {
+    addLabelSkip(stats, "qtyZero");
+    return [];
+  }
+  return Array.from({ length: qty }, () => ({ ...row, qty: 1 }));
+}
+
+function buildLabelCsvRows(rows, options = {}) {
+  const stats = createLabelExportStats();
+  const csvRows = [LABEL_CSV_HEADER];
+  const xlsxMode = options.format === "xlsx";
+  const weekdaySeq = {};
+  const emittedKeys = new Set();
+  const printedKeys = options.printedKeys || getPrintedLabelKeys();
+  const newLabelKeys = [];
+
+  (rows || []).forEach((row) => {
+    stats.originalRows += 1;
+    const target = getLabelTargetResult(row, stats);
+    if (!target.ok) return;
+    const optionName = normalizeLabelOptionName(row.optionName);
+    if (!optionName) {
+      addLabelSkip(stats, "optionFailed");
+      return;
+    }
+    const expanded = expandRowsByQty(row, stats);
+    if (!expanded.length) return;
+    stats.targetRows += 1;
+    const productName = normalizeProductName(row.productCode, row.productName);
+    const weekday = getLabelWeekday(row.receivedAt);
+    expanded.forEach((expandedRow, copyIndex) => {
+      const unitIndex = copyIndex + 1;
+      const labelKey = makeLabelKey(row, target.code, optionName, unitIndex);
+      if (printedKeys.has(labelKey)) {
+        addLabelSkip(stats, "printed");
+        return;
+      }
+      if (emittedKeys.has(labelKey)) {
+        addLabelSkip(stats, "duplicateKey");
+        return;
+      }
+      emittedKeys.add(labelKey);
+      newLabelKeys.push(labelKey);
+      weekdaySeq[weekday] = (weekdaySeq[weekday] || 0) + 1;
+      csvRows.push([
+        `${weekday}${weekdaySeq[weekday]}`,
+        xlsxMode ? String(expandedRow.productCode || "").trim() : formatCsvTextCell(expandedRow.productCode || ""),
+        target.code,
+        productName,
+        optionName,
+        1,
+        expandedRow.receivedAt || "",
+        expandedRow.recipient || "",
+      ]);
+    });
+  });
+
+  stats.finalRows = csvRows.length - 1;
+  return { rows: csvRows, stats, labelKeys: newLabelKeys };
+}
+
+function downloadLabelCsv(filename, rows) {
+  downloadCsv(filename, rows);
+}
+
+function downloadLabelXlsx(filename, rows) {
+  if (!window.XLSX) {
+    toast("XLSX 라이브러리 로드 실패: CSV로 저장합니다.");
+    downloadLabelCsv(filename.replace(/\.xlsx$/i, ".csv"), rows);
+    return;
+  }
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet(rows || []);
+  ws["!cols"] = [{ wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 42 }, { wch: 36 }, { wch: 8 }, { wch: 12 }, { wch: 12 }];
+  const range = window.XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
+  for (let row = 0; row <= range.e.r; row += 1) {
+    ["B", "C", "G"].forEach((col) => {
+      const address = `${col}${row + 1}`;
+      if (ws[address]) {
+        ws[address].t = "s";
+        ws[address].z = "@";
+      }
+    });
+  }
+  window.XLSX.utils.book_append_sheet(wb, ws, "라벨");
+  window.XLSX.writeFile(wb, filename, { bookType: "xlsx" });
+}
+
+function labelReceivedAtForItem(invoice, item) {
+  return invoice?.receiptDate || firstRawText(item.raw, "shortage_date", "ord_date", "receipt_date") || "";
+}
+
+function labelSourceInvoices() {
+  return exportOrderedInvoices(
+    mergeInvoicesUnique(
+      state.viewModel?.invoices || [],
+      state.workflowQueues?.viewModel?.invoices || [],
+      state.workflowQueues?.inspectionInvoices || [],
+      state.workflowQueues?.inspectionCompletedInvoices || [],
+    ),
+  ).filter((invoice) => (invoice.items || []).some((item) => isGoldItem(item) || isLabelTarget({ privateCode: item.ownCode || "" })));
+}
+
+function buildGoldLabelSourceRows() {
+  return labelSourceInvoices().flatMap((invoice) =>
+    (invoice.items || []).map((item) => ({
+      invNo: invoice.invoiceNo || "",
+      orderNo: invoice.orderGroupNo || "",
+      productCode: item.sellpiaProductCode || "",
+      privateCode: item.ownCode || "",
+      productName: item.productName || "",
+      optionName: item.optionName || "",
+      qty: item.quantity,
+      receivedAt: labelReceivedAtForItem(invoice, item),
+      recipient: invoice.recipientName || invoice.buyerName || invoice.displayName || "",
+    })),
+  );
+}
+
+function exportGoldLabelXlsx() {
+  const sourceRows = buildGoldLabelSourceRows();
+  if (!sourceRows.length) {
+    toast("라벨 XLSX 대상이 없습니다.");
+    return;
+  }
+  const result = buildLabelCsvRows(sourceRows, { format: "xlsx" });
+  if (!result.rows || result.rows.length <= 1) {
+    toast("라벨 XLSX 대상 GP 상품이 없습니다.");
+    return;
+  }
+  downloadLabelXlsx(`label_${timestampForFilename()}.xlsx`, result.rows);
+  toast(`라벨 XLSX ${result.rows.length - 1}행 다운로드`);
 }
 
 async function reorderInvoiceSortOrder() {
@@ -2718,6 +3198,11 @@ function bindEvents() {
     state.inspectionFilter = button.dataset.inspectionFilter || "all";
     state.selectedInspectionGroup = "";
     renderInspectionPanels();
+  });
+  els.inspectionPanel?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-inspection-export]");
+    if (!button) return;
+    if (button.dataset.inspectionExport === "gold-label") exportGoldLabelXlsx();
   });
   els.inspectionSearchInput?.addEventListener("input", () => {
     state.inspectionSearchText = els.inspectionSearchInput.value;
