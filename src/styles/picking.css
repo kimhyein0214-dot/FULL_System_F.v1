@@ -463,6 +463,15 @@ input {
   color: #6b3f00;
 }
 
+.group-btn.active,
+.group-btn.has-shortage.active,
+.group-btn.is-gold.active {
+  border-color: var(--blue);
+  outline: 3px solid rgba(37, 99, 235, 0.5);
+  outline-offset: -3px;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+
 .group-bulk-btn {
   width: 36px;
   height: 36px;

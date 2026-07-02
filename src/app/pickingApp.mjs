@@ -2453,7 +2453,8 @@ function classifyCsRowsByDay(rows) {
   rows.forEach((row) => {
     const key = row.invoice.orderGroupNo || row.invoice.invoiceNo || row.key;
     const sameInvoiceRows = invoiceRows.get(key) || [];
-    const allReady = sameInvoiceRows.length > 0 && sameInvoiceRows.every((item) => Number(item.currentShortageQty || 0) === 0);
+    const hasHoldRow = sameInvoiceRows.some((item) => item.csReason === "hold");
+    const allReady = sameInvoiceRows.length > 0 && !hasHoldRow && sameInvoiceRows.every((item) => Number(item.currentShortageQty || 0) === 0);
     const elapsed = Number(row.elapsedDays || 0);
     const push = (dayKey) => groups[dayKey]?.push({ ...row, csDayKey: dayKey });
     if (allReady) {
@@ -2504,12 +2505,17 @@ function allCsRows() {
   const invoices = state.workflowQueues?.viewModel?.invoices || state.viewModel?.invoices || [];
   const rows = [];
   for (const invoice of invoices) {
+    const invoiceState = workflowInvoiceState(invoice);
+    if (invoiceState?.inspected || invoiceState?.cancelled) continue;
+    const invoiceNeedsCs = Boolean(invoiceState?.hold || invoiceState?.csPending);
+    let invoiceRowCount = 0;
     for (const item of invoice.items || []) {
       const itemState = workflowItemState(invoice, item);
       const qty = Number(itemState?.shortageQty || shortageQty(item) || 0);
       const started = csShortageStartEvent(invoice, item);
       if (!started && qty <= 0 && !itemState?.shortageRepicked) continue;
       const date = dateKey(invoice.receiptDate);
+      invoiceRowCount += 1;
       rows.push({
         key: csRowKey(invoice, item),
         invoice,
@@ -2520,7 +2526,27 @@ function allCsRows() {
         shortageDate: date,
         elapsedDays: daysSinceDateKey(date),
         csMethod: csMethodText(invoice, item),
+        csReason: invoiceNeedsCs ? "hold" : "shortage",
         localStatus: state.csLocalStatus[csRowKey(invoice, item)] || "open",
+      });
+    }
+    if (invoiceNeedsCs && invoiceRowCount === 0) {
+      const item = invoice.items?.[0];
+      if (!item) continue;
+      const key = `${invoice.orderGroupNo || invoice.invoiceNo || "invoice"}::hold`;
+      const date = dateKey(invoice.receiptDate);
+      rows.push({
+        key,
+        invoice,
+        item,
+        state: null,
+        shortageQty: 0,
+        currentShortageQty: 0,
+        shortageDate: date,
+        elapsedDays: daysSinceDateKey(date),
+        csMethod: csMethodText(invoice, item),
+        csReason: "hold",
+        localStatus: state.csLocalStatus[key] || "open",
       });
     }
   }
@@ -2609,6 +2635,7 @@ function renderCsPanels() {
       const selected = row.key === state.selectedCsKey;
       const seller = sellerBadgeMeta(row.invoice.seller);
       const option = cleanOptionName(row.item.optionName, row.item.ownCode) || row.item.productName || "-";
+      const holdBadge = row.csReason === "hold" ? '<span class="workflow-row-badge hold">보류</span>' : "";
       return `<button class="workflow-row ${selected ? "selected" : ""}" data-cs-key="${escapeHtml(row.key)}" type="button">
         <span class="workflow-row-code seq-with-slot">
           <strong>${escapeHtml(visibleInvoiceSequenceLabel(row.invoice))}</strong>
@@ -2621,6 +2648,7 @@ function renderCsPanels() {
         </span>
         <span class="workflow-row-badges">
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+          ${holdBadge}
           <span class="workflow-row-badge ${row.localStatus === "done" ? "done" : row.localStatus === "contacted" ? "warn" : "danger"}">${row.localStatus === "done" ? "완료" : row.localStatus === "contacted" ? "연락" : "처리전"}</span>
         </span>
       </button>`;
@@ -2640,6 +2668,7 @@ function renderCsPanels() {
       </div>
       <div class="workflow-detail-actions">
         <span class="invoice-badge">${escapeHtml(preset.label)}</span>
+        ${selected.csReason === "hold" ? '<span class="workflow-row-badge hold">보류</span>' : ""}
         <button class="btn" data-cs-copy="${escapeHtml(selected.key)}" type="button">문구 복사</button>
       </div>
     </div>
