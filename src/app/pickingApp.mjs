@@ -130,10 +130,8 @@ const state = {
   inspectionHideCompleted: false,
   inspectionSearchText: "",
   csDateFilter: "all",
-  csStatusFilter: "open",
   csSearchText: "",
   selectedCsKey: "",
-  csLocalStatus: {},
   sidebarCollapsed: false,
   workflowEventsReady: false,
   workflowEventsChecked: false,
@@ -194,7 +192,6 @@ const els = {
   inspectionListBody: document.getElementById("inspection-list-body"),
   inspectionDetail: document.getElementById("inspection-detail"),
   csDateTabs: document.getElementById("cs-date-tabs"),
-  csStatusTabs: document.getElementById("cs-status-tabs"),
   csSearchInput: document.getElementById("cs-search-input"),
   csListCount: document.getElementById("cs-list-count"),
   csListBody: document.getElementById("cs-list-body"),
@@ -1650,12 +1647,7 @@ function sideShortcutConfig() {
   if (state.activeTab === "cs") {
     return {
       title: "CS 보기",
-      items: [
-        ["cs-status", "open", "처리전"],
-        ["cs-status", "contacted", "연락"],
-        ["cs-status", "done", "완료"],
-        ["cs-status", "all", "전체"],
-      ],
+      items: [],
     };
   }
   if (state.activeTab === "completed") {
@@ -1676,7 +1668,6 @@ function isSideShortcutActive(type, value) {
   if (type === "inspection") return state.inspectionFilter === value;
   if (type === "inspection-hide") return state.inspectionHideCompleted;
   if (type === "completed-date") return state.completedDateMode === value;
-  if (type === "cs-status") return state.csStatusFilter === value;
   return false;
 }
 
@@ -1729,12 +1720,6 @@ function applySideShortcut(type, value) {
     state.completedDateMode = value || "receipt";
     state.selectedCompletedGroup = "";
     renderCompletedPanels();
-    renderSideShortcuts();
-  }
-  if (type === "cs-status") {
-    state.csStatusFilter = value || "open";
-    state.selectedCsKey = "";
-    renderCsPanels();
     renderSideShortcuts();
   }
 }
@@ -2527,7 +2512,6 @@ function allCsRows() {
         elapsedDays: daysSinceDateKey(date),
         csMethod: csMethodText(invoice, item),
         csReason: invoiceNeedsCs ? "hold" : "shortage",
-        localStatus: state.csLocalStatus[csRowKey(invoice, item)] || "open",
       });
     }
     if (invoiceNeedsCs && invoiceRowCount === 0) {
@@ -2546,7 +2530,6 @@ function allCsRows() {
         elapsedDays: daysSinceDateKey(date),
         csMethod: csMethodText(invoice, item),
         csReason: "hold",
-        localStatus: state.csLocalStatus[key] || "open",
       });
     }
   }
@@ -2568,7 +2551,6 @@ function filteredCsRows() {
   const byDay = classifyCsRowsByDay(allRows);
   const sourceRows = state.csDateFilter === "all" ? allRows : byDay[state.csDateFilter] || [];
   return sourceRows.filter((row) => {
-    if (state.csStatusFilter !== "all" && row.localStatus !== state.csStatusFilter) return false;
     if (!search) return true;
     return [
       row.invoice.invoiceNo,
@@ -2610,18 +2592,6 @@ function renderCsPanels() {
       .map(([value, label]) => `<button class="filter-chip ${state.csDateFilter === value ? "active" : ""}" data-cs-date="${escapeHtml(value)}" type="button">${escapeHtml(label)}</button>`)
       .join("");
   }
-  const statusButtons = [
-    ["open", `처리전 ${allRows.filter((row) => row.localStatus === "open").length}`],
-    ["contacted", `연락 ${allRows.filter((row) => row.localStatus === "contacted").length}`],
-    ["done", `완료 ${allRows.filter((row) => row.localStatus === "done").length}`],
-    ["all", "전체"],
-  ];
-  if (els.csStatusTabs) {
-    els.csStatusTabs.innerHTML = statusButtons
-      .map(([value, label]) => `<button class="filter-chip ${state.csStatusFilter === value ? "active" : ""}" data-cs-status="${escapeHtml(value)}" type="button">${escapeHtml(label)}</button>`)
-      .join("");
-  }
-
   const rows = filteredCsRows();
   if (els.csListCount) els.csListCount.textContent = `${rows.length}건 / 전체 ${allRows.length}건`;
   if (!rows.length) {
@@ -2649,18 +2619,16 @@ function renderCsPanels() {
         <span class="workflow-row-badges">
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
           ${holdBadge}
-          <span class="workflow-row-badge ${row.localStatus === "done" ? "done" : row.localStatus === "contacted" ? "warn" : "danger"}">${row.localStatus === "done" ? "완료" : row.localStatus === "contacted" ? "연락" : "처리전"}</span>
+          <span class="workflow-row-badge danger">CS필요</span>
         </span>
       </button>`;
     })
     .join("");
 
   const selected = rows.find((row) => row.key === state.selectedCsKey) || rows[0];
-  const presetKey = recommendedCsTemplateKey(selected);
-  const preset = CS_TEMPLATE_PRESETS[presetKey] || CS_TEMPLATE_PRESETS.d1;
-  const message = buildCsMessage(selected);
   const option = cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-";
-  const openStatusLabel = selected.localStatus === "contacted" ? "연락 취소" : selected.localStatus === "done" ? "완료 취소" : "처리전";
+  const orderMemo = itemSellpiaOrderMemo(selected.invoice, selected.item);
+  const readonlyHint = allowWrites ? "" : "readonly title=\"?write=1에서 저장할 수 있습니다.\"";
   els.csDetail.innerHTML = `<div class="cs-detail-card">
     <div class="workflow-detail-head">
       <div>
@@ -2668,9 +2636,8 @@ function renderCsPanels() {
         <span>${escapeHtml(csDayLabel(selected.csDayKey || defaultCsDayKey(selected)))} · ${escapeHtml(selected.shortageDate)} · ${selected.elapsedDays}일 경과 · 미송 ${selected.shortageQty}</span>
       </div>
       <div class="workflow-detail-actions">
-        <span class="invoice-badge">${escapeHtml(preset.label)}</span>
+        <span class="invoice-badge">주문메모</span>
         ${selected.csReason === "hold" ? '<span class="workflow-row-badge hold">보류</span>' : ""}
-        <button class="btn" data-cs-copy="${escapeHtml(selected.key)}" type="button">문구 복사</button>
       </div>
     </div>
     <div class="cs-product-line">
@@ -2678,16 +2645,12 @@ function renderCsPanels() {
       <span class="${optionHasBarChange(selected.item) ? "option-change" : ""}">${escapeHtml(option)}</span>
       <small>송장 ${escapeHtml(selected.invoice.invoiceNo || "-")} · ${escapeHtml(invoiceSequenceWithGroupLabel(selected.invoice))}</small>
     </div>
-    <div class="cs-status-actions">
-      <button class="filter-chip ${selected.localStatus === "open" ? "active" : ""}" data-cs-set-status="open" data-cs-key="${escapeHtml(selected.key)}" type="button">${escapeHtml(openStatusLabel)}</button>
-      <button class="filter-chip ${selected.localStatus === "contacted" ? "active" : ""}" data-cs-set-status="contacted" data-cs-key="${escapeHtml(selected.key)}" type="button">연락</button>
-      <button class="filter-chip ${selected.localStatus === "done" ? "active" : ""}" data-cs-set-status="done" data-cs-key="${escapeHtml(selected.key)}" type="button">완료</button>
-    </div>
-    <textarea class="cs-template-preview" readonly>${escapeHtml(message)}</textarea>
-    <div class="cs-template-tabs">
-      ${Object.entries(CS_TEMPLATE_PRESETS)
-        .map(([key, value]) => `<span class="${key === presetKey ? "active" : ""}">${escapeHtml(value.label)}</span>`)
-        .join("")}
+    <div class="cs-memo-editor">
+      <label>
+        <span>셀피아 주문메모</span>
+        <textarea data-cs-order-memo data-order-group="${escapeHtml(selected.invoice.orderGroupNo)}" data-item-no="${escapeHtml(selected.item.sellpiaItemNo)}" rows="8" placeholder="주문메모" ${readonlyHint}>${escapeHtml(orderMemo)}</textarea>
+      </label>
+      <button class="btn primary" data-cs-order-memo-save data-order-group="${escapeHtml(selected.invoice.orderGroupNo)}" data-item-no="${escapeHtml(selected.item.sellpiaItemNo)}" type="button">주문메모 저장</button>
     </div>
   </div>`;
 }
@@ -4887,14 +4850,6 @@ function bindEvents() {
     state.selectedCsKey = "";
     renderCsPanels();
   });
-  els.csStatusTabs?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-cs-status]");
-    if (!button) return;
-    state.csStatusFilter = button.dataset.csStatus || "open";
-    state.selectedCsKey = "";
-    renderCsPanels();
-    renderSideShortcuts();
-  });
   els.csSearchInput?.addEventListener("input", () => {
     state.csSearchText = els.csSearchInput.value;
     state.selectedCsKey = "";
@@ -4907,28 +4862,12 @@ function bindEvents() {
     renderCsPanels();
   });
   els.csDetail?.addEventListener("click", (event) => {
-    const copyButton = event.target.closest("[data-cs-copy]");
-    if (copyButton) {
-      const row = allCsRows().find((item) => item.key === copyButton.dataset.csCopy);
-      if (row && navigator.clipboard?.writeText) navigator.clipboard.writeText(buildCsMessage(row)).then(() => toast("CS 문구 복사"));
-      else toast("클립보드 복사를 지원하지 않는 브라우저입니다.");
-      return;
-    }
-    const statusButton = event.target.closest("[data-cs-set-status]");
-    if (!statusButton) return;
-    const nextStatus = statusButton.dataset.csSetStatus || "open";
-    const row = allCsRows().find((item) => item.key === statusButton.dataset.csKey);
-    const prevStatus = row?.localStatus || "open";
-    state.csLocalStatus[statusButton.dataset.csKey] = nextStatus;
-    if (prevStatus === "contacted" && nextStatus === "open" && state.csStatusFilter === "contacted") {
-      state.csStatusFilter = "open";
-    }
-    renderCsPanels();
-    renderSideShortcuts();
-    if (prevStatus === "contacted" && nextStatus === "open") toast("연락 처리를 취소했습니다.");
-    else if (nextStatus === "contacted") toast("연락 처리했습니다.");
-    else if (nextStatus === "done") toast("CS 완료 처리했습니다.");
-    else toast("CS 상태를 처리전으로 변경했습니다.");
+    const memoButton = event.target.closest("[data-cs-order-memo-save]");
+    if (!memoButton) return;
+    const orderGroupNo = memoButton.dataset.orderGroup;
+    const itemNo = memoButton.dataset.itemNo;
+    const field = els.csDetail.querySelector(`[data-cs-order-memo][data-order-group="${window.CSS?.escape ? CSS.escape(orderGroupNo) : orderGroupNo}"][data-item-no="${window.CSS?.escape ? CSS.escape(itemNo) : itemNo}"]`);
+    saveInspectionSellpiaOrderMemo(orderGroupNo, itemNo, field?.value || "").then(renderCsPanels).catch(showError);
   });
   els.dashboardSummary?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-dashboard-tab]");

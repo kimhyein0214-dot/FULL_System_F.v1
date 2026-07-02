@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pretendard/1.3.9/static/pretendard.css">
-    <link rel="stylesheet" href="src/styles/picking.css?v=20260702-group-cs1">
+    <link rel="stylesheet" href="src/styles/picking.css?v=20260702-cs-memo1">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   </head>
   <body>
@@ -224,7 +224,7 @@
           <div class="panel-head">
             <div>
               <h2>CS</h2>
-              <p>미송 발생일 기준 연락 대상과 알림톡 문구를 확인합니다.</p>
+              <p>CS가 필요한 주문의 주문메모를 확인하고 수정합니다.</p>
             </div>
             <div id="cs-filter-bar" class="panel-tools cs-tools">
               <div id="cs-date-tabs" class="filter-bar" aria-label="CS 일차"></div>
@@ -234,10 +234,9 @@
           <div class="workflow-layout cs-layout">
             <aside class="workflow-list">
               <div class="workflow-list-head">
-                <strong>연락 대상</strong>
+                <strong>CS 필요</strong>
                 <span id="cs-list-count">0건</span>
               </div>
-              <div id="cs-status-tabs" class="cs-status-tabs" aria-label="CS 처리상태"></div>
               <div id="cs-list-body" class="workflow-list-body">
                 <div class="workflow-empty">미송 발생 데이터를 불러오는 중입니다.</div>
               </div>
@@ -245,8 +244,8 @@
             <section class="workflow-detail">
               <div id="cs-detail" class="cs-detail-body">
                 <div class="workflow-placeholder">
-                  <strong>CS 연락 미리보기</strong>
-                  <p>대상을 선택하면 미송 발생일, 경과일, 추천 템플릿을 표시합니다.</p>
+                  <strong>주문메모 확인</strong>
+                  <p>대상을 선택하면 주문메모를 확인하고 수정할 수 있습니다.</p>
                 </div>
               </div>
             </section>
@@ -315,6 +314,6 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="src/app/pickingApp.mjs?v=20260702-group-cs1"></script>
+    <script type="module" src="src/app/pickingApp.mjs?v=20260702-cs-memo1"></script>
   </body>
 </html>
