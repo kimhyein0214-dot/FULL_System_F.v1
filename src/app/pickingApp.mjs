@@ -106,6 +106,7 @@ const state = {
   workflowEventsReady: false,
   workflowEventsChecked: false,
   saving: new Set(),
+  workflowSaving: new Set(),
   drawerKeypad: {
     orderGroupNo: "",
     value: "",
@@ -389,6 +390,36 @@ function workOrderedInvoices() {
 
 function workflowOrderedInvoices() {
   return orderedInvoicesForSystemSequence(state.workflowQueues?.viewModel?.invoices || []);
+}
+
+const invoiceSequenceCache = {
+  workSortMode: null,
+  viewModel: null,
+  workflowViewModel: null,
+  map: new Map(),
+};
+
+function invoiceSystemSequenceMap() {
+  const workflowViewModel = state.workflowQueues?.viewModel || null;
+  if (
+    invoiceSequenceCache.workSortMode === state.workSortMode &&
+    invoiceSequenceCache.viewModel === state.viewModel &&
+    invoiceSequenceCache.workflowViewModel === workflowViewModel
+  ) {
+    return invoiceSequenceCache.map;
+  }
+  const map = new Map();
+  for (const rows of [workOrderedInvoices(), workflowOrderedInvoices()]) {
+    rows.forEach((row, index) => {
+      const key = systemInvoiceKey(row);
+      if (key && !map.has(key)) map.set(key, index + 1);
+    });
+  }
+  invoiceSequenceCache.workSortMode = state.workSortMode;
+  invoiceSequenceCache.viewModel = state.viewModel;
+  invoiceSequenceCache.workflowViewModel = workflowViewModel;
+  invoiceSequenceCache.map = map;
+  return map;
 }
 
 function normalizeRouteCode(value) {
@@ -801,10 +832,8 @@ function systemInvoiceKey(invoice) {
 function invoiceSystemSequenceNo(invoice, fallbackIndex = 0) {
   const key = systemInvoiceKey(invoice);
   if (key) {
-    for (const rows of [workOrderedInvoices(), workflowOrderedInvoices()]) {
-      const index = rows.findIndex((row) => systemInvoiceKey(row) === key);
-      if (index >= 0) return index + 1;
-    }
+    const sequence = invoiceSystemSequenceMap().get(key);
+    if (sequence) return sequence;
   }
   return fallbackIndex + 1;
 }
@@ -1799,7 +1828,8 @@ function renderShortagePanels() {
   </div>`;
 }
 
-function renderInspectionPanels() {
+function renderInspectionPanels(options = {}) {
+  const renderList = options.list !== false;
   const allInvoices = inspectionSourceInvoices();
   const completedCount = allInvoices.filter((invoice) => workflowInvoiceState(invoice)?.inspected).length;
   const pendingInvoices = state.inspectionHideCompleted
@@ -1842,45 +1872,51 @@ function renderInspectionPanels() {
     state.selectedInspectionGroup = invoices[0].orderGroupNo;
   }
 
-  els.inspectionListBody.innerHTML = invoices
-    .map((invoice, index) => {
-      const itemStates = (invoice.items || []).map((item) => workflowItemState(invoice, item)).filter(Boolean);
-      const repicked = itemStates.filter((row) => row.shortageRepicked && !row.inspected && !row.cancelled).length;
-      const invoiceState = workflowInvoiceState(invoice);
-      const completed = Boolean(invoiceState?.inspected);
-      const seller = sellerBadgeMeta(invoice.seller);
-      const rowClasses = [
-        "workflow-row",
-        invoice.orderGroupNo === state.selectedInspectionGroup ? "selected" : "",
-        completed ? "is-completed" : "",
-        invoiceState?.hold ? "is-hold" : "",
-        repicked ? "has-shortage" : "",
-        invoiceHasGold(invoice) ? "is-gold" : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const badges = [
-        seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : "",
-        completed ? '<span class="workflow-row-badge done">완료</span>' : "",
-        invoiceHasGold(invoice) ? '<span class="workflow-row-badge gold">골드</span>' : "",
-        invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : "",
-        repicked ? `<span class="workflow-row-badge warn">검품 ${repicked}</span>` : "",
-      ]
-        .filter(Boolean)
-        .join("");
-      return `<button class="${rowClasses}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
-        <span class="workflow-row-code seq-with-slot">
-          <strong>${escapeHtml(visibleInvoiceSequenceLabel(invoice, index))}</strong>
-          <small>${escapeHtml(invoiceGroupSlotLabel(invoice, index))}</small>
-        </span>
-        <span class="workflow-row-main">
-          <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
-          <small>상품 ${invoice.items.length}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")}</small>
-        </span>
-        <span class="workflow-row-badges">${badges}</span>
-      </button>`;
-    })
-    .join("");
+  if (renderList) {
+    els.inspectionListBody.innerHTML = invoices
+      .map((invoice, index) => {
+        const itemStates = (invoice.items || []).map((item) => workflowItemState(invoice, item)).filter(Boolean);
+        const repicked = itemStates.filter((row) => row.shortageRepicked && !row.inspected && !row.cancelled).length;
+        const invoiceState = workflowInvoiceState(invoice);
+        const completed = Boolean(invoiceState?.inspected);
+        const seller = sellerBadgeMeta(invoice.seller);
+        const rowClasses = [
+          "workflow-row",
+          invoice.orderGroupNo === state.selectedInspectionGroup ? "selected" : "",
+          completed ? "is-completed" : "",
+          invoiceState?.hold ? "is-hold" : "",
+          repicked ? "has-shortage" : "",
+          invoiceHasGold(invoice) ? "is-gold" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const badges = [
+          seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : "",
+          completed ? '<span class="workflow-row-badge done">완료</span>' : "",
+          invoiceHasGold(invoice) ? '<span class="workflow-row-badge gold">골드</span>' : "",
+          invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : "",
+          repicked ? `<span class="workflow-row-badge warn">검품 ${repicked}</span>` : "",
+        ]
+          .filter(Boolean)
+          .join("");
+        return `<button class="${rowClasses}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
+          <span class="workflow-row-code seq-with-slot">
+            <strong>${escapeHtml(visibleInvoiceSequenceLabel(invoice, index))}</strong>
+            <small>${escapeHtml(invoiceGroupSlotLabel(invoice, index))}</small>
+          </span>
+          <span class="workflow-row-main">
+            <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
+            <small>상품 ${invoice.items.length}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")}</small>
+          </span>
+          <span class="workflow-row-badges">${badges}</span>
+        </button>`;
+      })
+      .join("");
+  } else {
+    els.inspectionListBody?.querySelectorAll("[data-inspection-group]").forEach((button) => {
+      button.classList.toggle("selected", button.dataset.inspectionGroup === state.selectedInspectionGroup);
+    });
+  }
 
   const selected = invoices.find((invoice) => invoice.orderGroupNo === state.selectedInspectionGroup) || invoices[0];
   const seller = sellerBadgeMeta(selected.seller);
@@ -1905,7 +1941,7 @@ function renderInspectionPanels() {
         <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")}</span>
         <label class="inspection-drawer-box">
           <span>서랍번호</span>
-          <input class="drawer-input inspection-drawer-input" data-inspection-drawer data-order-group="${escapeHtml(selected.orderGroupNo)}" value="${escapeHtml(invoiceDrawerValue(selected))}" placeholder="서랍번호 / 메모">
+          <textarea class="drawer-input inspection-drawer-input" data-inspection-drawer data-order-group="${escapeHtml(selected.orderGroupNo)}" rows="2" placeholder="서랍번호 / 메모">${escapeHtml(invoiceDrawerValue(selected))}</textarea>
         </label>
       </div>
       <div class="inspection-actions">
@@ -2296,7 +2332,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
         </div>
         <div class="drawer-box">
           <label>서랍</label>
-          <input class="drawer-input" inputmode="numeric" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" value="${escapeHtml(drawerValue)}" placeholder="서랍번호">
+          <textarea class="drawer-input" inputmode="numeric" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" rows="2" placeholder="서랍번호">${escapeHtml(drawerValue)}</textarea>
         </div>
       </div>
     </div>
@@ -2394,16 +2430,16 @@ function schedulePickingSurfaces(delayMs = 3000) {
 
 function renderWorkflowSurfaces() {
   renderMetrics();
-  renderDashboard();
-  renderShortagePanels();
-  renderInspectionPanels();
-  renderCsPanels();
-  renderCompletedPanels();
+  if (state.activeTab === "dashboard") renderDashboard();
+  if (state.activeTab === "shortage") renderShortagePanels();
+  if (state.activeTab === "inspection") renderInspectionPanels();
+  if (state.activeTab === "cs") renderCsPanels();
+  if (state.activeTab === "completed") renderCompletedPanels();
 }
 
 function renderWorkflowSurfacesIfVisible() {
   if (["dashboard", "shortage", "inspection", "cs", "completed"].includes(state.activeTab)) {
-    renderWorkflowSurfaces();
+    renderActivePanel();
     return;
   }
   renderMetrics();
@@ -2548,22 +2584,29 @@ async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
     toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
     return false;
   }
+  const savingKey = `item::${workflowItemKey(invoice, item)}::${eventType}`;
+  if (state.workflowSaving.has(savingKey)) return false;
+  state.workflowSaving.add(savingKey);
   const eventRow = buildItemEvent(invoice, item, eventType, overrides);
-  const { data, error } = await db.from("workflow_item_events").insert(eventRow).select("*").single();
-  if (error) {
+  try {
+    const { data, error } = await db.from("workflow_item_events").insert(eventRow).select("*").single();
+    if (error) {
+      state.workflowEventsChecked = true;
+      state.workflowEventsReady = false;
+      renderMetrics();
+      console.warn("workflow_item_events insert failed", error);
+      toast("피킹 저장 완료 · 이벤트 테이블 미준비");
+      return false;
+    }
     state.workflowEventsChecked = true;
-    state.workflowEventsReady = false;
-    renderMetrics();
-    console.warn("workflow_item_events insert failed", error);
-    toast("피킹 저장 완료 · 이벤트 테이블 미준비");
-    return false;
+    state.workflowEventsReady = true;
+    const savedEvent = data || { ...eventRow, event_at: new Date().toISOString() };
+    applyWorkflowItemEvent(savedEvent);
+    renderWorkflowSurfacesIfVisible();
+    return savedEvent;
+  } finally {
+    state.workflowSaving.delete(savingKey);
   }
-  state.workflowEventsChecked = true;
-  state.workflowEventsReady = true;
-  const savedEvent = data || { ...eventRow, event_at: new Date().toISOString() };
-  applyWorkflowItemEvent(savedEvent);
-  renderWorkflowSurfacesIfVisible();
-  return savedEvent;
 }
 
 async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
@@ -2571,22 +2614,29 @@ async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
     toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
     return false;
   }
+  const savingKey = `invoice::${invoice.orderGroupNo}::${eventType}`;
+  if (state.workflowSaving.has(savingKey)) return false;
+  state.workflowSaving.add(savingKey);
   const eventRow = buildInvoiceEvent(invoice, eventType, overrides);
-  const { data, error } = await db.from("workflow_invoice_events").insert(eventRow).select("*").single();
-  if (error) {
+  try {
+    const { data, error } = await db.from("workflow_invoice_events").insert(eventRow).select("*").single();
+    if (error) {
+      state.workflowEventsChecked = true;
+      state.workflowEventsReady = false;
+      renderMetrics();
+      console.warn("workflow_invoice_events insert failed", error);
+      toast("송장 이벤트 저장 실패");
+      return false;
+    }
     state.workflowEventsChecked = true;
-    state.workflowEventsReady = false;
-    renderMetrics();
-    console.warn("workflow_invoice_events insert failed", error);
-    toast("송장 이벤트 저장 실패");
-    return false;
+    state.workflowEventsReady = true;
+    const savedEvent = data || { ...eventRow, event_at: new Date().toISOString() };
+    applyWorkflowInvoiceEvent(savedEvent);
+    renderWorkflowSurfacesIfVisible();
+    return savedEvent;
+  } finally {
+    state.workflowSaving.delete(savingKey);
   }
-  state.workflowEventsChecked = true;
-  state.workflowEventsReady = true;
-  const savedEvent = data || { ...eventRow, event_at: new Date().toISOString() };
-  applyWorkflowInvoiceEvent(savedEvent);
-  renderWorkflowSurfacesIfVisible();
-  return savedEvent;
 }
 
 async function savePickingRow(invoice, item, eventType = null, eventOverrides = {}) {
@@ -3931,15 +3981,20 @@ function setActiveTab(tab) {
     state.filterMode = "all";
   }
   renderShell();
-  renderActivePanelSoon(120, { metrics: false });
+  renderActivePanelSoon(0, { metrics: false });
 }
 
 function scrollToTrayItem(key) {
   state.currentTrayKey = key;
-  renderOrderList();
-  renderTray();
   const selectorKey = window.CSS?.escape ? CSS.escape(key) : key.replace(/"/g, '\\"');
-  const target = els.orderList.querySelector(`[data-slot-key="${selectorKey}"]`);
+  let target = els.orderList.querySelector(`[data-slot-key="${selectorKey}"]`);
+  if (target) {
+    selectPickingCard(key);
+  } else {
+    renderOrderList();
+    renderTray();
+    target = els.orderList.querySelector(`[data-slot-key="${selectorKey}"]`);
+  }
   if (target) {
     target.scrollIntoView({ block: "center", behavior: "smooth" });
   }
@@ -3972,7 +4027,8 @@ function selectFirstItemOfInvoice(invoice, shouldRender = true) {
   const key = itemSlotKey(invoice, item);
   state.currentTrayKey = key;
   if (shouldRender) {
-    render();
+    if (["picking", "gold"].includes(state.activeTab)) renderPickingSurfaces();
+    else render();
   } else {
     selectPickingCard(key);
   }
@@ -4100,7 +4156,7 @@ function moveWorkflowSelection(delta) {
     const keys = rows.map((invoice) => invoice.orderGroupNo);
     const current = keys.indexOf(state.selectedInspectionGroup);
     state.selectedInspectionGroup = keys[Math.max(0, Math.min(keys.length - 1, (current >= 0 ? current : 0) + delta))];
-    renderInspectionPanels();
+    renderInspectionPanels({ list: false });
     return;
   }
   if (state.activeTab === "cs") {
@@ -4401,7 +4457,7 @@ function bindEvents() {
     const button = event.target.closest("[data-inspection-group]");
     if (!button) return;
     state.selectedInspectionGroup = button.dataset.inspectionGroup;
-    renderInspectionPanels();
+    renderInspectionPanels({ list: false });
   });
   els.inspectionDetail?.addEventListener("input", (event) => {
     const field = event.target.closest("[data-inspection-memo-field]");
