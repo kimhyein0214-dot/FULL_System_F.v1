@@ -2714,3 +2714,104 @@ input {
     grid-template-columns: repeat(4, minmax(160px, 1fr));
   }
 }
+
+@media (max-width: 720px) {
+  html,
+  body {
+    min-height: 100%;
+    overflow: auto;
+  }
+
+  .app-shell {
+    width: 100%;
+    min-height: 100dvh;
+    height: auto;
+    grid-template-rows: auto auto auto auto auto;
+    overflow: visible;
+  }
+
+  .topbar {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding: 7px;
+  }
+
+  .brand {
+    min-width: 0;
+    flex: 1 1 170px;
+  }
+
+  .brand h1 {
+    font-size: 16px;
+  }
+
+  .toolbar {
+    width: 100%;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .btn,
+  .seg {
+    padding: 0 10px;
+  }
+
+  .date-input {
+    width: 142px;
+  }
+
+  .progress-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .main-grid {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .sidebar {
+    max-height: 360px;
+    overflow: auto;
+  }
+
+  .tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tab {
+    height: 38px;
+    padding: 0 8px;
+    text-align: center;
+  }
+
+  .work-panel,
+  .dashboard-panel,
+  .workflow-panel {
+    min-height: min(620px, calc(100dvh - 170px));
+  }
+
+  .picking-layout,
+  .shortage-layout,
+  .inspection-layout,
+  .completed-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-tools,
+  .filter-bar {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .search {
+    width: 100%;
+    min-width: 220px;
+  }
+}

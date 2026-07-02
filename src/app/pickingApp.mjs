@@ -1865,6 +1865,21 @@ function render() {
   renderTray();
 }
 
+function renderPickingSurfaces() {
+  renderMetrics();
+  renderGroups();
+  renderOrderList();
+  renderTray();
+}
+
+function renderWorkflowSurfaces() {
+  renderMetrics();
+  renderDashboard();
+  renderShortagePanels();
+  renderInspectionPanels();
+  renderCompletedPanels();
+}
+
 function findInvoiceAndItem(orderGroupNo, sellpiaItemNo) {
   const invoice = (state.viewModel?.invoices || []).find((row) => row.orderGroupNo === orderGroupNo);
   const item = invoice?.items.find((row) => row.sellpiaItemNo === sellpiaItemNo);
@@ -1925,12 +1940,38 @@ function buildInvoiceEvent(invoice, eventType, overrides = {}) {
   };
 }
 
+function rebuildWorkflowQueuesFromLocalEvents() {
+  if (!state.workflowQueues) return;
+  const viewModel = state.workflowQueues.viewModel || state.viewModel;
+  const workflowState = buildWorkflowState({
+    itemEvents: state.workflowQueues.itemEvents || [],
+    invoiceEvents: state.workflowQueues.invoiceEvents || [],
+  });
+  state.workflowQueues.workflowState = workflowState;
+  state.workflowQueues.shortageItems = openShortageItems(viewModel, workflowState);
+  state.workflowQueues.inspectionInvoices = repickedInvoicesForInspection(viewModel, workflowState);
+  state.workflowQueues.inspectionCompletedInvoices = completedInvoicesForInspection(viewModel, workflowState);
+}
+
+function applyWorkflowItemEvent(row) {
+  if (!state.workflowQueues || !row) return;
+  state.workflowQueues.itemEvents = [...(state.workflowQueues.itemEvents || []), row];
+  rebuildWorkflowQueuesFromLocalEvents();
+}
+
+function applyWorkflowInvoiceEvent(row) {
+  if (!state.workflowQueues || !row) return;
+  state.workflowQueues.invoiceEvents = [...(state.workflowQueues.invoiceEvents || []), row];
+  rebuildWorkflowQueuesFromLocalEvents();
+}
+
 async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
   if (!allowWorkflowEvents) {
     toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
     return false;
   }
-  const { error } = await db.from("workflow_item_events").insert(buildItemEvent(invoice, item, eventType, overrides));
+  const eventRow = buildItemEvent(invoice, item, eventType, overrides);
+  const { data, error } = await db.from("workflow_item_events").insert(eventRow).select("*").single();
   if (error) {
     state.workflowEventsChecked = true;
     state.workflowEventsReady = false;
@@ -1941,8 +1982,10 @@ async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
   }
   state.workflowEventsChecked = true;
   state.workflowEventsReady = true;
-  renderMetrics();
-  return true;
+  const savedEvent = data || { ...eventRow, event_at: new Date().toISOString() };
+  applyWorkflowItemEvent(savedEvent);
+  renderWorkflowSurfaces();
+  return savedEvent;
 }
 
 async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
@@ -1950,7 +1993,8 @@ async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
     toast("이벤트 저장은 ?write=1&events=1에서 가능합니다.");
     return false;
   }
-  const { error } = await db.from("workflow_invoice_events").insert(buildInvoiceEvent(invoice, eventType, overrides));
+  const eventRow = buildInvoiceEvent(invoice, eventType, overrides);
+  const { data, error } = await db.from("workflow_invoice_events").insert(eventRow).select("*").single();
   if (error) {
     state.workflowEventsChecked = true;
     state.workflowEventsReady = false;
@@ -1961,8 +2005,10 @@ async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
   }
   state.workflowEventsChecked = true;
   state.workflowEventsReady = true;
-  renderMetrics();
-  return true;
+  const savedEvent = data || { ...eventRow, event_at: new Date().toISOString() };
+  applyWorkflowInvoiceEvent(savedEvent);
+  renderWorkflowSurfaces();
+  return savedEvent;
 }
 
 async function savePickingRow(invoice, item, eventType = null, eventOverrides = {}) {
@@ -2633,7 +2679,7 @@ async function completeSelectedShortagePicking(shortageKey = state.selectedShort
 
   state.selectedInspectionGroup = row.invoice.orderGroupNo;
   state.selectedShortageKey = "";
-  await loadWorkflowData();
+  renderWorkflowSurfaces();
   toast("미송피킹 완료: 검품탭에 송장 전체가 표시됩니다.");
 }
 
@@ -2690,7 +2736,7 @@ async function reopenShortageRepick(orderGroupNo, sellpiaItemNo) {
   state.activeTab = "shortage";
   state.selectedShortageKey = workflowItemKey(invoice, item);
   state.selectedInspectionGroup = "";
-  await loadWorkflowData();
+  renderWorkflowSurfaces();
   toast("미송피킹 완료를 취소했습니다. 미송피킹 목록으로 돌아갑니다.");
 }
 
@@ -2709,9 +2755,8 @@ async function saveSelectedShortageMemo(shortageKey = state.selectedShortageKey)
     drawerMemo,
   });
   if (!ok) return;
-  await loadWorkflowData();
   state.selectedShortageKey = shortageKey;
-  renderShortagePanels();
+  renderWorkflowSurfaces();
   toast("미송 메모 저장 완료");
 }
 
@@ -2734,7 +2779,7 @@ async function completeSelectedInspection(orderGroupNo = state.selectedInspectio
   state.selectedInspectionGroup = invoice.orderGroupNo;
   state.selectedCompletedGroup = invoice.orderGroupNo;
   state.inspectionHideCompleted = false;
-  await loadWorkflowData();
+  renderWorkflowSurfaces();
   toast("검품 완료 처리되었습니다.");
 }
 
@@ -2749,7 +2794,7 @@ async function reopenSelectedInspection(orderGroupNo = state.selectedInspectionG
   state.activeTab = "inspection";
   state.selectedInspectionGroup = invoice.orderGroupNo;
   state.selectedCompletedGroup = "";
-  await loadWorkflowData();
+  renderWorkflowSurfaces();
   toast("검품 완료가 취소되었습니다.");
 }
 
@@ -2764,7 +2809,7 @@ async function toggleSelectedInspectionHold(orderGroupNo = state.selectedInspect
   const ok = await saveWorkflowInvoiceEvent(invoice, eventType, { memo: invoiceState?.hold ? "hold released" : "hold created" });
   if (!ok) return;
   state.selectedInspectionGroup = invoice.orderGroupNo;
-  await loadWorkflowData();
+  renderWorkflowSurfaces();
   toast(invoiceState?.hold ? "보류 해제되었습니다." : "보류 처리되었습니다.");
 }
 
@@ -2780,13 +2825,13 @@ async function onOrderListClick(event) {
 
   if (action === "toggle") {
     patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
-    render();
+    renderPickingSurfaces();
     try {
       await savePickingRow(invoice, item, isPicked(item) ? "picked" : "pick_unchecked");
       toast("피킹 상태 저장");
     } catch (error) {
       patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
-      render();
+      renderPickingSurfaces();
       toast(`저장 실패: ${error.message}`);
     }
   }
@@ -2804,13 +2849,13 @@ async function onOrderListClick(event) {
             ? "shortage_qty_changed"
             : null;
     patchLocalPickingState(invoice, item, { shortageQty: next });
-    render();
+    renderPickingSurfaces();
     try {
       await savePickingRow(invoice, item, eventType, { quantity: next });
       toast("부족수량 저장");
     } catch (error) {
       patchLocalPickingState(invoice, item, { shortageQty: Math.max(0, next - delta) });
-      render();
+      renderPickingSurfaces();
       toast(`저장 실패: ${error.message}`);
     }
   }
@@ -2950,7 +2995,7 @@ async function bulkToggleGroup(groupIndex) {
   }
 
   changed.forEach(({ invoice, item }) => patchLocalPickingState(invoice, item, { isPicked: nextPicked }));
-  render();
+  renderPickingSurfaces();
 
   try {
     for (const { invoice, item } of changed) {
@@ -3167,13 +3212,13 @@ async function toggleSelectedItem() {
   const { invoice, item } = findInvoiceAndItem(orderGroupNo, sellpiaItemNo);
   if (!invoice || !item) return;
   patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
-  render();
+  renderPickingSurfaces();
   try {
     await savePickingRow(invoice, item, isPicked(item) ? "picked" : "pick_unchecked");
     toast("피킹 상태 저장");
   } catch (error) {
     patchLocalPickingState(invoice, item, { isPicked: !isPicked(item) });
-    render();
+    renderPickingSurfaces();
     toast(`저장 실패: ${error.message}`);
   }
 }
