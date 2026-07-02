@@ -84,7 +84,7 @@ const CS_DAY_TEMPLATE = {
 };
 
 const params = new URLSearchParams(location.search);
-const allowWrites = params.get("write") === "1";
+const allowWrites = params.get("write") !== "0";
 const allowOrderReorder = allowWrites && params.get("reorder") !== "0";
 const allowWorkflowEvents = allowWrites && params.get("events") !== "0";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -2362,7 +2362,7 @@ function renderInspectionPanels(options = {}) {
           const sellpiaOrderMemo = itemSellpiaOrderMemo(selected, item);
           const inspectionMemo = itemInspectionMemo(item);
           const memoReadonly = allowWrites ? "" : "readonly";
-          const memoHint = allowWrites ? "" : ' title="읽기전용입니다. 저장은 ?write=1에서 가능합니다."';
+          const memoHint = allowWrites ? "" : ' title="읽기전용입니다. URL의 write=0을 제거하면 저장할 수 있습니다."';
           const reopenButton =
             itemRepicked && !selectedCompleted
               ? `<button class="workflow-inline-btn danger" data-action="shortage-repick-reopen" data-order-group="${escapeHtml(selected.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" type="button" ${actionDisabled}>완료취소</button>`
@@ -2634,7 +2634,7 @@ function renderCsPanels() {
   const selected = rows.find((row) => row.key === state.selectedCsKey) || rows[0];
   const option = cleanOptionName(selected.item.optionName, selected.item.ownCode) || selected.item.productName || "-";
   const orderMemo = itemSellpiaOrderMemo(selected.invoice, selected.item);
-  const readonlyHint = allowWrites ? "" : "readonly title=\"?write=1에서 저장할 수 있습니다.\"";
+  const readonlyHint = allowWrites ? "" : "readonly title=\"URL의 write=0을 제거하면 저장할 수 있습니다.\"";
   els.csDetail.innerHTML = `<div class="cs-detail-card">
     <div class="workflow-detail-head">
       <div>
@@ -3050,7 +3050,7 @@ function applyWorkflowInvoiceEvent(row) {
 
 async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
   if (!allowWorkflowEvents) {
-    toast("이벤트 저장은 ?write=1에서 가능합니다. events=0이면 비활성화됩니다.");
+    toast("이벤트 저장이 비활성화되어 있습니다. URL의 write=0 또는 events=0을 제거해주세요.");
     return false;
   }
   const savingKey = `item::${workflowItemKey(invoice, item)}::${eventType}`;
@@ -3080,7 +3080,7 @@ async function saveWorkflowItemEvent(invoice, item, eventType, overrides = {}) {
 
 async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
   if (!allowWorkflowEvents) {
-    toast("이벤트 저장은 ?write=1에서 가능합니다. events=0이면 비활성화됩니다.");
+    toast("이벤트 저장이 비활성화되어 있습니다. URL의 write=0 또는 events=0을 제거해주세요.");
     return false;
   }
   const savingKey = `invoice::${invoice.orderGroupNo}::${eventType}`;
@@ -3110,7 +3110,7 @@ async function saveWorkflowInvoiceEvent(invoice, eventType, overrides = {}) {
 
 async function savePickingRow(invoice, item, eventType = null, eventOverrides = {}) {
   if (!allowWrites) {
-    toast("읽기전용입니다. 저장 테스트는 ?write=1로 열어주세요.");
+    toast("읽기전용입니다. URL의 write=0을 제거하면 저장할 수 있습니다.");
     return;
   }
 
@@ -4089,7 +4089,7 @@ function findInspectionInvoiceItem(orderGroupNo, sellpiaItemNo) {
 
 async function saveInspectionSellpiaOrderMemo(orderGroupNo, sellpiaItemNo, value) {
   if (!allowWrites) {
-    toast("읽기전용입니다. 셀피아 주문메모 저장은 ?write=1에서 가능합니다.");
+    toast("읽기전용입니다. URL의 write=0을 제거하면 셀피아 주문메모를 저장할 수 있습니다.");
     return;
   }
   const { invoice, item } = findInspectionInvoiceItem(orderGroupNo, sellpiaItemNo);
@@ -4118,7 +4118,7 @@ async function saveInspectionSellpiaOrderMemo(orderGroupNo, sellpiaItemNo, value
 
 async function saveInspectionConfirmMemo(orderGroupNo, sellpiaItemNo, value) {
   if (!allowWrites) {
-    toast("읽기전용입니다. 상품 확인메모 저장은 ?write=1에서 가능합니다.");
+    toast("읽기전용입니다. URL의 write=0을 제거하면 상품 확인메모를 저장할 수 있습니다.");
     return;
   }
   const { invoice, item } = findInspectionInvoiceItem(orderGroupNo, sellpiaItemNo);
@@ -4344,7 +4344,7 @@ function closeDrawerKeypad() {
 
 async function commitDrawerKeypad() {
   if (!allowWrites) {
-    toast("읽기전용입니다. 서랍번호 저장은 ?write=1에서 가능합니다.");
+    toast("읽기전용입니다. URL의 write=0을 제거하면 서랍번호를 저장할 수 있습니다.");
     closeDrawerKeypad();
     return;
   }
@@ -4389,7 +4389,7 @@ function onDrawerKeypadOpen(event) {
 
 async function bulkToggleGroup(groupIndex) {
   if (!allowWrites) {
-    toast("읽기전용입니다. 조 일괄 체크는 ?write=1에서 가능합니다.");
+    toast("읽기전용입니다. URL의 write=0을 제거하면 조 일괄 체크를 저장할 수 있습니다.");
     return;
   }
 
