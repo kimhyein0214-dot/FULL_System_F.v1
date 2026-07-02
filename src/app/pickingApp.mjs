@@ -37,6 +37,7 @@ const state = {
   workflowQueueError: "",
   selectedShortageKey: "",
   shortageFilter: "all",
+  shortageSearchText: "",
   selectedInspectionGroup: "",
   selectedCompletedGroup: "",
   completedDateMode: "receipt",
@@ -88,6 +89,7 @@ const els = {
   shortageListBody: document.getElementById("shortage-list-body"),
   shortageDetail: document.getElementById("shortage-detail"),
   shortageFilterBar: document.getElementById("shortage-filter-bar"),
+  shortageSearchInput: document.getElementById("shortage-search-input"),
   inspectionListCount: document.getElementById("inspection-list-count"),
   inspectionListBody: document.getElementById("inspection-list-body"),
   inspectionDetail: document.getElementById("inspection-detail"),
@@ -1510,23 +1512,48 @@ function drawerMemoForShortageRow(row) {
   return String(row?.state?.drawerMemo || row?.item?.pickingState?.drawerMemo || row?.invoice?.sellpiaMemo1 || "").trim();
 }
 
+function shortageRowMatchesSearch(row) {
+  const search = state.shortageSearchText.trim().toLowerCase();
+  if (!search) return true;
+  const invoice = row.invoice || {};
+  const drawerMemo = drawerMemoForShortageRow(row);
+  const sequenceNo = String(visibleInvoiceSequenceNo(invoice) || "");
+  const text = [
+    invoice.invoiceNo,
+    invoice.orderGroupNo,
+    invoice.displayName,
+    invoice.csDisplayName,
+    invoice.recipientName,
+    invoice.buyerName,
+    sequenceNo,
+    visibleInvoiceSequenceLabel(invoice),
+    drawerMemo,
+  ]
+    .join(" ")
+    .toLowerCase();
+  const digits = onlyDigits(search);
+  if (digits && search === digits) {
+    return onlyDigits(invoice.invoiceNo).includes(digits) || sequenceNo === digits || onlyDigits(drawerMemo).includes(digits);
+  }
+  return text.includes(search);
+}
+
 function shortageRowsForCurrentFilter() {
   const openRows = state.workflowQueues?.shortageItems || [];
+  let rows = openRows;
   if (state.shortageFilter === "completed") {
-    return repickedShortageRows().sort((a, b) => workflowEventTime(b.state) - workflowEventTime(a.state));
-  }
-  if (state.shortageFilter === "drawer") {
-    return openRows.filter(drawerMemoForShortageRow);
-  }
-  if (state.shortageFilter === "code") {
-    return [...openRows].sort(
+    rows = repickedShortageRows().sort((a, b) => workflowEventTime(b.state) - workflowEventTime(a.state));
+  } else if (state.shortageFilter === "drawer") {
+    rows = openRows.filter(drawerMemoForShortageRow);
+  } else if (state.shortageFilter === "code") {
+    rows = [...openRows].sort(
       (a, b) =>
         String(a.item.ownCode || "").localeCompare(String(b.item.ownCode || ""), "ko") ||
         String(a.item.optionName || "").localeCompare(String(b.item.optionName || ""), "ko") ||
         visibleInvoiceSequenceNo(a.invoice) - visibleInvoiceSequenceNo(b.invoice),
     );
   }
-  return openRows;
+  return rows.filter(shortageRowMatchesSearch);
 }
 
 function shortageRowOwnCode(row) {
@@ -1548,12 +1575,15 @@ function shortageGroupStats(rows = []) {
 function renderShortageRow({ invoice, item, state: itemState, completed }) {
   const key = workflowItemKey(invoice, item);
   const orderNo = itemOrderNo(item, invoiceItemIndex(invoice, item));
+  const receiptDate = String(invoice.receiptDate || "").slice(0, 10);
+  const invoiceSeq = visibleInvoiceSequenceLabel(invoice);
   return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""} ${completed ? "is-completed" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
     <span class="workflow-row-code">${escapeHtml(item.ownCode || "-")}</span>
     <span class="workflow-row-main">
       <strong>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</strong>
       <span class="workflow-row-order">상품순서 ${orderNo}번</span>
-      <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · ${escapeHtml(invoiceSequenceWithGroupLabel(invoice))}</small>
+      <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · 송장 ${escapeHtml(invoiceSeq)}</small>
+      ${receiptDate ? `<small class="workflow-row-receipt">접수 ${escapeHtml(receiptDate)}</small>` : ""}
     </span>
     <span class="workflow-row-badge ${completed ? "done" : "danger"}">${completed ? "피킹완료" : `미송 ${Number(itemState?.shortageQty || 0) || 1}`}</span>
   </button>`;
@@ -1582,13 +1612,16 @@ function renderShortagePanels() {
   const openCount = state.workflowQueues?.shortageItems?.length || 0;
   const completedCount = repickedShortageRows().length;
   const codeGroupCount = state.shortageFilter === "code" ? shortageGroupStats(rows).length : 0;
+  if (els.shortageSearchInput && els.shortageSearchInput.value !== state.shortageSearchText) {
+    els.shortageSearchInput.value = state.shortageSearchText;
+  }
   els.shortageFilterBar?.querySelectorAll("[data-shortage-filter]").forEach((button) => {
     button.classList.toggle("active", button.dataset.shortageFilter === state.shortageFilter);
   });
   if (els.shortageListCount) {
     els.shortageListCount.textContent =
       state.shortageFilter === "all"
-        ? `대기 ${openCount}개 · 완료 ${completedCount}개`
+        ? `${state.shortageSearchText.trim() ? "검색 " : ""}대기 ${openCount}개 · 표시 ${rows.length}개 · 완료 ${completedCount}개`
         : state.shortageFilter === "code"
           ? `자사코드 ${codeGroupCount}개 · 상품 ${rows.length}개`
           : `${shortageFilterLabel()} ${rows.length}개`;
@@ -1607,8 +1640,9 @@ function renderShortagePanels() {
   }
 
   if (!rows.length) {
-    renderWorkflowEmpty(els.shortageListBody, `${shortageFilterLabel()} 대상이 없습니다.`);
-    renderWorkflowEmpty(els.shortageDetail, `${shortageFilterLabel()} 대상이 없습니다.`);
+    const emptyMessage = state.shortageSearchText.trim() ? "검색 결과가 없습니다." : `${shortageFilterLabel()} 대상이 없습니다.`;
+    renderWorkflowEmpty(els.shortageListBody, emptyMessage);
+    renderWorkflowEmpty(els.shortageDetail, emptyMessage);
     return;
   }
 
@@ -3534,7 +3568,7 @@ async function toggleSelectedItem() {
 }
 
 function currentWorkflowRows() {
-  if (state.activeTab === "shortage") return state.workflowQueues?.shortageItems || [];
+  if (state.activeTab === "shortage") return shortageRowsForCurrentFilter();
   if (state.activeTab === "inspection") {
     return inspectionSourceInvoices().filter(invoiceMatchesInspectionFilter).filter(invoiceMatchesInspectionSearch);
   }
@@ -3774,6 +3808,12 @@ function bindEvents() {
     const button = event.target.closest("[data-shortage-filter]");
     if (!button) return;
     state.shortageFilter = button.dataset.shortageFilter || "all";
+    state.selectedShortageKey = "";
+    renderShortagePanels();
+    renderSideShortcuts();
+  });
+  els.shortageSearchInput?.addEventListener("input", () => {
+    state.shortageSearchText = els.shortageSearchInput.value;
     state.selectedShortageKey = "";
     renderShortagePanels();
     renderSideShortcuts();

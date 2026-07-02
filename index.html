@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pretendard/1.3.9/static/pretendard.css">
-    <link rel="stylesheet" href="src/styles/picking.css?v=20260702-sidebar-shortcuts1">
+    <link rel="stylesheet" href="src/styles/picking.css?v=20260702-shortage-search1">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   </head>
   <body>
@@ -139,6 +139,7 @@
               <button class="filter-chip" data-shortage-filter="code" type="button">자사코드별</button>
               <button class="filter-chip" data-shortage-filter="drawer" type="button">서랍입력</button>
               <button class="filter-chip" data-shortage-filter="completed" type="button">피킹완료</button>
+              <input id="shortage-search-input" class="search shortage-search" placeholder="송장번호 / 송장순서 / 이름 / 서랍번호">
             </div>
           </div>
           <div class="workflow-layout">
@@ -271,6 +272,6 @@
     <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="src/app/pickingApp.mjs?v=20260702-sidebar-shortcuts1"></script>
+    <script type="module" src="src/app/pickingApp.mjs?v=20260702-shortage-search1"></script>
   </body>
 </html>
