@@ -901,9 +901,6 @@ function itemStatusMeta(item) {
 function sellerBadgeMeta(seller) {
   const text = String(seller || "").trim().toLowerCase();
   if (!text) return null;
-  if (text.includes("스마트") || text.includes("smart") || text.includes("naver") || text.includes("네이버")) {
-    return { label: "스마트스토어", className: "seller-smartstore" };
-  }
   if (text.includes("지그재그") || text.includes("zigzag") || text.includes("zig")) {
     return { label: "지그재그", className: "seller-zigzag" };
   }
@@ -912,6 +909,9 @@ function sellerBadgeMeta(seller) {
   }
   if (text.includes("쿠팡") || text.includes("coupang")) {
     return { label: "쿠팡", className: "seller-coupang" };
+  }
+  if (text.includes("스마트") || text.includes("smart") || text.includes("naver") || text.includes("네이버")) {
+    return { label: "스마트스토어", className: "seller-smartstore" };
   }
   return { label: "메이크샵", className: "seller-makeshop" };
 }
@@ -4269,10 +4269,10 @@ function drawerDigitsOnly(value) {
 
 function drawerPrefixForSeller(seller) {
   const text = String(seller || "").trim().toLowerCase();
-  if (text.includes("smart") || text.includes("naver") || text.includes("스마트") || text.includes("네이버")) return "ㅁㅅ";
   if (text.includes("ably") || text.includes("a-bly") || text.includes("에이블리")) return "ㅁㅇ";
   if (text.includes("coupang") || text.includes("쿠팡")) return "ㅁㅋ";
   if (text.includes("zigzag") || text.includes("zig") || text.includes("지그재그")) return "ㅁㅈ";
+  if (text.includes("smart") || text.includes("naver") || text.includes("스마트") || text.includes("네이버")) return "ㅁㅅ";
   return "ㅁㅁ";
 }
 
