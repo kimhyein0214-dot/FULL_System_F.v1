@@ -460,6 +460,27 @@ function invoiceStats(invoice) {
   };
 }
 
+function itemHasOpenWorkflowShortage(invoice, item) {
+  const itemState = workflowItemState(invoice, item);
+  if (itemState?.cancelled || itemState?.shortageRepicked || itemState?.inspected) return false;
+  if (itemState?.shortageOpen) return true;
+  return shortageQty(item) > 0;
+}
+
+function invoiceHasOpenWorkflowShortage(invoice) {
+  return (invoice.items || []).some((item) => itemHasOpenWorkflowShortage(invoice, item));
+}
+
+function invoiceReadyFromPicking(invoice) {
+  const invoiceState = workflowInvoiceState(invoice);
+  if (invoiceState?.cancelled) return false;
+  if (invoiceHasOpenWorkflowShortage(invoice)) return false;
+  if (invoiceState?.inspected) return true;
+
+  const stats = invoiceStats(invoice);
+  return stats.total > 0 && stats.picked === stats.total && stats.shortage === 0 && stats.hold === 0;
+}
+
 function invoiceSessionRank(invoice) {
   const session = String(invoice?.session || invoice?.raw?.am_pm || "").trim().toUpperCase();
   if (session === "AM" || session === "오전") return 0;
@@ -1096,13 +1117,14 @@ function mergeInvoicesUnique(...lists) {
 
 function isInspectionVisibleBaseInvoice(invoice) {
   const invoiceState = workflowInvoiceState(invoice);
-  return !invoiceState?.cancelled;
+  return !invoiceState?.cancelled && !invoiceHasOpenWorkflowShortage(invoice);
 }
 
 function inspectionSourceInvoices() {
+  const pickingReadyInvoices = (state.viewModel?.invoices || []).filter(invoiceReadyFromPicking);
   return sortInspectionInvoices(
     mergeInvoicesUnique(
-      state.viewModel?.invoices || [],
+      pickingReadyInvoices,
       state.workflowQueues?.inspectionInvoices || [],
       state.workflowQueues?.inspectionCompletedInvoices || [],
     ).filter(isInspectionVisibleBaseInvoice),
@@ -1545,7 +1567,7 @@ function renderTray() {
                 .filter(Boolean)
                 .join(" ");
               return `<button class="${classes}" data-tray-key="${escapeHtml(key)}" type="button">
-                <span class="tray-item-check">${isPicked(item) ? "✓" : ""}</span>
+                <span class="tray-item-check" data-tray-toggle>${isPicked(item) ? "✓" : ""}</span>
                 <span class="tray-item-main">
                   <span class="tray-item-seq">${escapeHtml(invoiceSequenceWithGroupLabel(invoice))}</span>
                   <strong>${escapeHtml(item.ownCode || "-")}</strong>
@@ -2012,7 +2034,7 @@ function updateShortageReceivingStatus(openRows = []) {
 }
 
 function drawerMemoForShortageRow(row) {
-  return String(row?.state?.drawerMemo || row?.item?.pickingState?.drawerMemo || row?.invoice?.sellpiaMemo1 || "").trim();
+  return String(row?.state?.drawerMemo || row?.item?.pickingState?.drawerMemo || invoiceDrawerValue(row?.invoice) || "").trim();
 }
 
 function shortageRowMatchesSearch(row) {
@@ -2202,7 +2224,7 @@ function renderShortagePanels() {
         <div class="workflow-memo-editor">
           <label>
             <span>관리메모</span>
-            <input data-shortage-field="drawerMemo" value="${escapeHtml(selectedState?.drawerMemo || selected.invoice.sellpiaMemo1 || "")}" placeholder="서랍번호/CS메모">
+            <input data-shortage-field="drawerMemo" value="${escapeHtml(drawerMemoForShortageRow(selected))}" placeholder="서랍번호/CS메모">
           </label>
           <label>
             <span>관리메모2</span>
@@ -5138,8 +5160,13 @@ function bindEvents() {
   els.trayBoard?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-tray-key]");
     if (!button) return;
+    const shouldToggle = Boolean(event.target.closest("[data-tray-toggle]"));
     state.trayOpen = true;
     scrollToTrayItem(button.dataset.trayKey);
+    if (shouldToggle) {
+      event.preventDefault();
+      toggleSelectedItem().catch(showError);
+    }
   });
   document.addEventListener("keydown", onGlobalKeydown);
 }
