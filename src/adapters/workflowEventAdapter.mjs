@@ -250,15 +250,15 @@ export function buildSyntheticMemoEvents({ orders = [], orderItems = [] } = {}) 
   return { itemEvents: syntheticItemEvents, invoiceEvents: syntheticInvoiceEvents };
 }
 
-export function buildWorkflowQueues({ orders = [], orderItems = [], itemEvents = [], invoiceEvents = [] } = {}) {
+export function buildWorkflowQueues({ orders = [], orderItems = [], pickingRows = [], shortageRows = [], itemEvents = [], invoiceEvents = [] } = {}) {
   const syntheticEvents = buildSyntheticMemoEvents({ orders, orderItems });
   const mergedItemEvents = [...syntheticEvents.itemEvents, ...itemEvents];
   const mergedInvoiceEvents = [...syntheticEvents.invoiceEvents, ...invoiceEvents];
   const viewModel = buildPickingViewModel({
     orders,
     orderItems,
-    pickingRows: [],
-    shortageRows: [],
+    pickingRows,
+    shortageRows,
   });
   const workflowState = buildWorkflowState({ itemEvents: mergedItemEvents, invoiceEvents: mergedInvoiceEvents });
 
@@ -292,11 +292,29 @@ export async function loadWorkflowQueues(db, { pageSize = 1000 } = {}) {
         pageSize,
       )
     : [];
+  const pickingRows = orderGroupNos.length
+    ? await fetchRowsByInChunks(
+        () => db.from("picking").select("*"),
+        "ord_no",
+        orderGroupNos,
+        pageSize,
+      )
+    : [];
+  const shortageRows = orderGroupNos.length
+    ? await fetchRowsByInChunks(
+        () => db.from("shortage").select("*"),
+        "ord_no",
+        orderGroupNos,
+        pageSize,
+      )
+    : [];
 
   return {
     orderGroupNos,
     itemEvents,
     invoiceEvents,
-    ...buildWorkflowQueues({ orders, orderItems, itemEvents, invoiceEvents }),
+    pickingRows,
+    shortageRows,
+    ...buildWorkflowQueues({ orders, orderItems, pickingRows, shortageRows, itemEvents, invoiceEvents }),
   };
 }

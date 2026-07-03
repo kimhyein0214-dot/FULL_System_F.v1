@@ -1,4 +1,4 @@
-import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260703-latest-scrape2";
+import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260703-workflow-drawer1";
 import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260702-inspection-memos1";
 import {
   buildWorkflowState,
