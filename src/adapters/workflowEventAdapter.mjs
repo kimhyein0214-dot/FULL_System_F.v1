@@ -44,6 +44,25 @@ function sortEvents(events = []) {
   return [...events].sort((a, b) => eventTime(a) - eventTime(b) || eventId(a) - eventId(b));
 }
 
+function localDateKey(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function latestScrapeDate(orders = []) {
+  const dates = uniqueTexts(orders.map((row) => localDateKey(row.scraped_at))).sort();
+  return dates[dates.length - 1] || "";
+}
+
+function ordersFromLatestScrape(orders = []) {
+  const latest = latestScrapeDate(orders);
+  if (!latest) return orders;
+  return orders.filter((row) => localDateKey(row.scraped_at) === latest);
+}
+
 async function fetchAllRows(makeQuery, pageSize = 1000) {
   const rows = [];
   for (let from = 0; ; from += pageSize) {
@@ -243,10 +262,11 @@ export function buildWorkflowQueues({ orders = [], orderItems = [], itemEvents =
 }
 
 export async function loadWorkflowQueues(db, { pageSize = 1000 } = {}) {
-  const orders = await fetchAllRows(
+  const allOrders = await fetchAllRows(
     () => db.from("orders").select("*").order("receipt_date", { ascending: false, nullsFirst: false }).order("sort_order", { ascending: true, nullsFirst: false }),
     pageSize,
   );
+  const orders = ordersFromLatestScrape(allOrders);
 
   const orderGroupNos = uniqueTexts(orders.map(orderGroupNo));
   const { itemEvents, invoiceEvents } = orderGroupNos.length ? await fetchWorkflowEvents(db, { orderGroupNos, pageSize }) : { itemEvents: [], invoiceEvents: [] };
