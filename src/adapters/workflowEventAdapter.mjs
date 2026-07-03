@@ -63,6 +63,17 @@ function ordersFromLatestScrape(orders = []) {
   return orders.filter((row) => localDateKey(row.scraped_at) === latest);
 }
 
+function scrapeCutoffTime(orders = []) {
+  const times = orders.map((row) => new Date(row.scraped_at || 0).getTime()).filter(Number.isFinite);
+  return times.length ? Math.min(...times) : 0;
+}
+
+function eventsAfterScrape(events = [], orders = []) {
+  const cutoff = scrapeCutoffTime(orders);
+  if (!cutoff) return events;
+  return events.filter((row) => eventTime(row) >= cutoff);
+}
+
 async function fetchAllRows(makeQuery, pageSize = 1000) {
   const rows = [];
   for (let from = 0; ; from += pageSize) {
@@ -269,7 +280,9 @@ export async function loadWorkflowQueues(db, { pageSize = 1000 } = {}) {
   const orders = ordersFromLatestScrape(allOrders);
 
   const orderGroupNos = uniqueTexts(orders.map(orderGroupNo));
-  const { itemEvents, invoiceEvents } = orderGroupNos.length ? await fetchWorkflowEvents(db, { orderGroupNos, pageSize }) : { itemEvents: [], invoiceEvents: [] };
+  const events = orderGroupNos.length ? await fetchWorkflowEvents(db, { orderGroupNos, pageSize }) : { itemEvents: [], invoiceEvents: [] };
+  const itemEvents = eventsAfterScrape(events.itemEvents, orders);
+  const invoiceEvents = eventsAfterScrape(events.invoiceEvents, orders);
 
   const orderItems = orderGroupNos.length
     ? await fetchRowsByInChunks(
