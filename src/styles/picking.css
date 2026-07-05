@@ -145,6 +145,12 @@ input {
   border-color: #94a3b8;
 }
 
+.btn.mini {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .btn.primary,
 .seg.active {
   background: var(--blue);
@@ -731,6 +737,14 @@ input {
   gap: 5px;
 }
 
+.dashboard-calendar-tools {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .dashboard-calendar-weekdays,
 .dashboard-calendar-grid {
   display: grid;
@@ -755,18 +769,29 @@ input {
   padding: 7px;
   border-right: 1px solid #dbe4f0;
   border-bottom: 1px solid #dbe4f0;
+  border-top: 0;
+  border-left: 0;
   background: #ffffff;
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 7px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .dashboard-calendar-day.empty {
   background: #f8fafc;
+  cursor: default;
 }
 
 .dashboard-calendar-day.has-data {
   background: #fcfdff;
+}
+
+.dashboard-calendar-day:not(.empty):hover {
+  background: #f1f7ff;
 }
 
 .dashboard-calendar-day.selected {

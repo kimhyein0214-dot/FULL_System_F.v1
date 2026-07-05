@@ -147,6 +147,7 @@ const state = {
     filter: "all",
     search: "",
   },
+  dashboardMonthKey: todayDateString().slice(0, 7),
   photoViewer: {
     open: false,
     src: "",
@@ -1228,8 +1229,23 @@ function dashboardDonutSegments(segments = []) {
 }
 
 function dashboardMonthKey(dateValue = state.selectedDate) {
+  if (state.dashboardMonthKey) return state.dashboardMonthKey;
   const key = dateKey(dateValue) || todayDateString();
   return key.slice(0, 7);
+}
+
+function setDashboardMonthFromDate(dateValue = state.selectedDate) {
+  const key = dateKey(dateValue) || todayDateString();
+  state.dashboardMonthKey = key.slice(0, 7);
+}
+
+function shiftDashboardMonth(delta) {
+  const key = dashboardMonthKey();
+  const [year, month] = key.split("-").map(Number);
+  const date = new Date(year, month - 1 + delta, 1);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  state.dashboardMonthKey = local.toISOString().slice(0, 7);
+  renderDashboard();
 }
 
 function dashboardMonthDays(monthKey = dashboardMonthKey()) {
@@ -1367,7 +1383,12 @@ function renderDashboard() {
           <h3>${escapeHtml(monthKey.replace("-", "년 "))}월 작업 캘린더</h3>
           <p>접수일 기준으로 묶고, 값이 있는 상태만 표시합니다.</p>
         </div>
-        <div class="dashboard-month-total">${monthChips || '<span class="dashboard-empty-inline">표시할 상태 없음</span>'}</div>
+        <div class="dashboard-calendar-tools">
+          <button class="btn mini" data-dashboard-month="-1" type="button">이전달</button>
+          <button class="btn mini" data-dashboard-month="today" type="button">이번달</button>
+          <button class="btn mini" data-dashboard-month="1" type="button">다음달</button>
+          <div class="dashboard-month-total">${monthChips || '<span class="dashboard-empty-inline">표시할 상태 없음</span>'}</div>
+        </div>
       </div>
       <div class="dashboard-calendar-weekdays">
         ${["일", "월", "화", "수", "목", "금", "토"].map((day) => `<span>${day}</span>`).join("")}
@@ -1378,13 +1399,13 @@ function renderDashboard() {
             if (!day) return '<div class="dashboard-calendar-day empty"></div>';
             const stats = dayStats.get(day) || createDashboardDayStats(day);
             const chips = renderDashboardStatusChips(stats, { includeTotal: true });
-            return `<div class="dashboard-calendar-day ${day === state.selectedDate ? "selected" : ""} ${chips ? "has-data" : ""}">
+            return `<button class="dashboard-calendar-day ${day === state.selectedDate ? "selected" : ""} ${chips ? "has-data" : ""}" data-dashboard-date="${escapeHtml(day)}" type="button">
               <div class="dashboard-day-top">
                 <strong>${Number(day.slice(8, 10))}</strong>
                 ${day === todayDateString() ? "<em>오늘</em>" : ""}
               </div>
               <div class="dashboard-day-chips">${chips}</div>
-            </div>`;
+            </button>`;
           })
           .join("")}
       </div>
@@ -1423,6 +1444,11 @@ function renderDashboard() {
                     `<span class="dashboard-status-chip ${escapeHtml(key)}">${escapeHtml(label)} <strong>${value}</strong>${escapeHtml(unit)}</span>`,
                 )
                 .join("") || '<span class="dashboard-empty-inline">표시할 상태 없음</span>'}
+            </div>
+            <div class="dashboard-actions">
+              <button class="btn" data-dashboard-tab="shortage" type="button">미송피킹 보기</button>
+              <button class="btn" data-dashboard-tab="inspection" type="button">검품대기 보기</button>
+              <button class="btn" data-dashboard-tab="completed" type="button">작업완료 보기</button>
             </div>
             <p>미송피킹/검품은 선택 날짜가 아니라 workflow event 상태 기준으로 집계됩니다.</p>`
       }
@@ -4920,12 +4946,14 @@ function bindEvents() {
   els.refreshBtn.addEventListener("click", () => loadPickingData().catch(showError));
   els.todayBtn.addEventListener("click", () => {
     state.selectedDate = todayDateString();
+    setDashboardMonthFromDate(state.selectedDate);
     state.selectedCompletedGroup = "";
     els.dateInput.value = state.selectedDate;
     loadPickingData().catch(showError);
   });
   els.dateInput.addEventListener("change", () => {
     state.selectedDate = els.dateInput.value;
+    setDashboardMonthFromDate(state.selectedDate);
     state.currentGroup = 0;
     state.selectedCompletedGroup = "";
     loadPickingData().catch(showError);
@@ -5015,6 +5043,23 @@ function bindEvents() {
     saveInspectionSellpiaOrderMemo(orderGroupNo, itemNo, field?.value || "").then(renderCsPanels).catch(showError);
   });
   els.dashboardSummary?.addEventListener("click", (event) => {
+    const monthButton = event.target.closest("[data-dashboard-month]");
+    if (monthButton) {
+      const value = monthButton.dataset.dashboardMonth;
+      if (value === "today") setDashboardMonthFromDate(todayDateString());
+      else shiftDashboardMonth(Number(value) || 0);
+      return;
+    }
+    const dateButton = event.target.closest("[data-dashboard-date]");
+    if (dateButton) {
+      state.selectedDate = dateButton.dataset.dashboardDate;
+      setDashboardMonthFromDate(state.selectedDate);
+      state.currentGroup = 0;
+      state.selectedCompletedGroup = "";
+      if (els.dateInput) els.dateInput.value = state.selectedDate;
+      loadPickingData().catch(showError);
+      return;
+    }
     const button = event.target.closest("[data-dashboard-tab]");
     if (!button) return;
     setActiveTab(button.dataset.dashboardTab);
