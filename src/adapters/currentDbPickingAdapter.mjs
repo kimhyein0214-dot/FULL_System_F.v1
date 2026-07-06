@@ -91,7 +91,7 @@ export function normalizePickingState(row = {}) {
     sellpiaItemNo,
     key: makeItemStateKey(orderGroupNo, sellpiaItemNo),
     isPicked: Boolean(row.is_checked ?? row.checked ?? row.is_picked),
-    shortageQty: firstNumber(row.shortage_qty, row.short_qty) ?? 0,
+    shortageQty: 0,
     drawerMemo: firstText(row.drawer_no, row.drawer_memo),
     isHold: Boolean(row.hold ?? row.is_hold),
     status: firstText(row.status),

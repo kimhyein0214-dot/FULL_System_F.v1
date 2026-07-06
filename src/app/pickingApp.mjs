@@ -1,5 +1,5 @@
 import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260703-workflow-drawer1";
-import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260706-item-row-order1";
+import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260706-memo2-text1";
 import {
   buildWorkflowState,
   completedInvoicesForInspection,
@@ -371,13 +371,37 @@ function isPicked(item) {
   return Boolean(item.pickingState?.isPicked);
 }
 
+function normalizedShortageMemo2(value) {
+  const text = String(value ?? "").trim();
+  return text === "0" ? "" : text;
+}
+
+function isRepickDoneMemo2(value) {
+  const compact = String(value || "").replace(/\s+/g, "");
+  return compact === "ㅁ" || compact === "✓" || compact === "✔" || compact.toLowerCase() === "done" || compact.includes("피킹완료");
+}
+
+function shortageQtyFromMemo2(value) {
+  const text = normalizedShortageMemo2(value);
+  if (!text || isRepickDoneMemo2(text)) return 0;
+  if (/^\d+$/.test(text)) return Math.max(0, Number(text) || 0);
+  const matched = text.match(/\bshortage\s*(\d+)\b/i)?.[1] || text.match(/부족\s*(\d+)/)?.[1] || text.match(/\d+/)?.[0];
+  return matched ? Math.max(0, Number(matched) || 0) : 1;
+}
+
+function itemManagementMemo2(item, fallbackValue = "") {
+  const memo = firstRawPreservedText(item?.raw, "o_shop_memo2", "shop_memo2", "memo2", "sellpia_memo2") || item?.sellpiaMemo2 || item?.pickingState?.shortageMemo2 || "";
+  if (String(memo || "").trim()) return String(memo);
+  const fallbackQty = shortageQtyFromMemo2(fallbackValue);
+  return fallbackQty > 0 ? String(fallbackQty) : "";
+}
+
 function shortageQty(item) {
-  return Number(item.pickingState?.shortageQty || item.shortageState?.shortageQty || 0);
+  return shortageQtyFromMemo2(itemManagementMemo2(item));
 }
 
 function normalizedShortageQty(value) {
-  const number = Number(String(value ?? "").replace(/[^\d]/g, ""));
-  return Number.isFinite(number) ? Math.max(0, number) : 0;
+  return shortageQtyFromMemo2(value);
 }
 
 function isHold(item) {
@@ -2106,7 +2130,7 @@ function renderGoldInvoiceItem(invoice, item, invoiceIndex = 0, itemIndex = 0) {
     <div class="shortage-control gold-shortage-control">
       ${shortageQtyInput(invoice, item, shortage, "compact")}
     </div>
-    <textarea class="drawer-input gold-drawer-input" inputmode="numeric" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" rows="1" placeholder="서랍">${escapeHtml(invoiceDrawerValue(invoice))}</textarea>
+    <textarea class="drawer-input gold-drawer-input" inputmode="none" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" rows="1" placeholder="서랍" readonly>${escapeHtml(invoiceDrawerValue(invoice))}</textarea>
   </div>`;
 }
 
@@ -3246,7 +3270,7 @@ function renderPickingRow(invoice, item, invoiceIndex = 0, itemIndex = 0) {
         </div>
         <div class="drawer-box">
           <label>서랍</label>
-          <textarea class="drawer-input" inputmode="numeric" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" rows="2" placeholder="서랍번호">${escapeHtml(drawerValue)}</textarea>
+          <textarea class="drawer-input" inputmode="none" data-action="drawer" data-order-group="${escapeHtml(invoice.orderGroupNo)}" rows="2" placeholder="서랍번호" readonly>${escapeHtml(drawerValue)}</textarea>
         </div>
       </div>
     </div>
@@ -3572,7 +3596,6 @@ async function savePickingRow(invoice, item, eventType = null, eventOverrides = 
     sellpia_p_code: item.sellpiaProductCode || "",
     p_code: item.ownCode || item.sellpiaProductCode || "",
     is_checked: Boolean(item.pickingState?.isPicked),
-    shortage_qty: Number(item.pickingState?.shortageQty || 0),
     drawer_no: item.pickingState?.drawerMemo || "",
     hold: Boolean(item.pickingState?.isHold),
   };
@@ -3620,33 +3643,49 @@ async function setShortageQty(orderGroupNo, sellpiaItemNo, nextValue) {
     toast("부족수량 대상을 찾지 못했습니다.");
     return;
   }
+  const prevText = itemManagementMemo2(item);
+  const nextText = normalizedShortageMemo2(nextValue);
   const prev = shortageQty(item);
-  const next = normalizedShortageQty(nextValue);
-  if (prev === next) return;
+  const next = normalizedShortageQty(nextText);
+  if (prev === next && prevText === nextText) return;
   const eventType = shortageEventType(prev, next);
-  patchLocalPickingState(invoice, item, { shortageQty: next });
+  patchLocalPickingState(invoice, item, { shortageQty: next, shortageMemo2: nextText });
+  item.sellpiaMemo2 = nextText;
+  if (item.raw) {
+    item.raw.o_shop_memo2 = nextText;
+    item.raw.shop_memo2 = nextText;
+    item.raw.memo2 = nextText;
+  }
   paintPickingItemState(invoice, item);
   schedulePickingSurfaces();
   try {
-    await savePickingRow(invoice, item, eventType, { quantity: next });
+    await savePickingRow(invoice, item, eventType, { quantity: next, memo: nextText || null });
+    const { error } = await db.from("order_items").update({ o_shop_memo2: nextText }).eq("ord_no", invoice.orderGroupNo).eq("item_no", item.sellpiaItemNo);
+    if (error) throw error;
     renderWorkflowSurfacesIfVisible();
-    toast("부족수량 저장");
+    toast("관리메모2 저장");
   } catch (error) {
-    patchLocalPickingState(invoice, item, { shortageQty: prev });
+    patchLocalPickingState(invoice, item, { shortageQty: prev, shortageMemo2: prevText });
+    item.sellpiaMemo2 = prevText;
+    if (item.raw) {
+      item.raw.o_shop_memo2 = prevText;
+      item.raw.shop_memo2 = prevText;
+      item.raw.memo2 = prevText;
+    }
     render();
-    toast(`부족수량 저장 실패: ${error.message}`);
+    toast(`관리메모2 저장 실패: ${error.message}`);
   }
 }
 
 function onShortageInputChange(event) {
   const input = event.target.closest("[data-shortage-input]");
   if (!input) return;
-  input.value = String(normalizedShortageQty(input.value));
+  input.value = normalizedShortageMemo2(input.value);
   setShortageQty(input.dataset.orderGroup, input.dataset.itemNo, input.value).catch(showError);
 }
 
 function shortageQtyInput(invoice, item, value = shortageQty(item), extraClass = "") {
-  return `<input class="shortage-input ${extraClass}" data-shortage-input data-action="shortage-set" type="number" min="0" inputmode="numeric" value="${escapeHtml(normalizedShortageQty(value))}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" aria-label="부족수량">`;
+  return `<input class="shortage-input ${extraClass}" data-shortage-input data-action="shortage-set" type="text" value="${escapeHtml(itemManagementMemo2(item, value))}" data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" aria-label="관리메모2">`;
 }
 
 function firstRawText(source, ...keys) {
@@ -4839,6 +4878,8 @@ async function onDrawerKeypadClick(event) {
 function onDrawerKeypadOpen(event) {
   const input = event.target.closest(".drawer-input[data-action='drawer']");
   if (!input) return;
+  event.preventDefault();
+  input.blur();
   openDrawerKeypad(input);
 }
 
@@ -5475,6 +5516,7 @@ function bindEvents() {
     if (event.key === "Enter") jumpToInvoiceNo(els.jumpInvoiceInput.value);
   });
   els.orderList.addEventListener("click", (event) => onOrderListClick(event).catch(showError));
+  els.orderList.addEventListener("pointerdown", onDrawerKeypadOpen);
   els.orderList.addEventListener("click", onDrawerKeypadOpen);
   els.orderList.addEventListener("focusin", onDrawerKeypadOpen);
   els.orderList.addEventListener("click", (event) => {
