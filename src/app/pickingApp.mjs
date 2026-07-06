@@ -4046,35 +4046,29 @@ async function reorderInvoiceSortOrder() {
     toast("송장순서 재정렬이 비활성화되어 있습니다.");
     return;
   }
-  const ordered = workOrderedInvoices();
+  if (state.session === "ALL") {
+    toast("오전 또는 오후를 선택한 뒤 해당 시간대만 송장순서 재정렬하세요.");
+    return;
+  }
+  const targetSession = state.session;
+  const ordered = workOrderedInvoices().filter((invoice) => String(invoice?.session || invoice?.raw?.am_pm || "").trim().toUpperCase() === targetSession);
   if (!ordered.length) {
-    toast("재정렬할 송장이 없습니다.");
+    toast(`${targetSession === "AM" ? "오전" : "오후"} 재정렬할 송장이 없습니다.`);
     return;
   }
 
-  const sessionLabel = state.session === "AM" ? "오전" : state.session === "PM" ? "오후" : "전체";
+  const sessionLabel = targetSession === "AM" ? "오전" : "오후";
   const proceed = window.confirm(
-    `현재 ${sessionLabel} 작업순서 기준으로 ${ordered.length}개 송장의 sort_order를 다시 저장할까요?\n오전/오후는 선택된 범위 안에서 따로 재정렬됩니다.\n골드 송장은 해당 범위의 뒤쪽으로 배치됩니다.`,
+    `현재 ${sessionLabel} 화면에 보이는 작업순서 기준으로 ${ordered.length}개 송장의 sort_order를 다시 저장할까요?\n다른 시간대 송장순서는 변경하지 않습니다.\n골드 송장은 해당 시간대의 뒤쪽으로 배치됩니다.`,
   );
   if (!proceed) return;
 
-  const groups =
-    state.session === "ALL"
-      ? [
-          ordered.filter((invoice) => invoiceSessionRank(invoice) === 0),
-          ordered.filter((invoice) => invoiceSessionRank(invoice) === 1),
-          ordered.filter((invoice) => invoiceSessionRank(invoice) > 1),
-        ].filter((rows) => rows.length)
-      : [ordered];
-
-  for (const group of groups) {
-    for (let index = 0; index < group.length; index += 1) {
-      const invoice = group[index];
-      const nextSortOrder = index + 1;
-      const { error } = await db.from("orders").update({ sort_order: nextSortOrder }).eq("ord_no", invoice.orderGroupNo);
-      if (error) throw error;
-      invoice.sortOrder = nextSortOrder;
-    }
+  for (let index = 0; index < ordered.length; index += 1) {
+    const invoice = ordered[index];
+    const nextSortOrder = index + 1;
+    const { error } = await db.from("orders").update({ sort_order: nextSortOrder }).eq("ord_no", invoice.orderGroupNo).eq("am_pm", targetSession);
+    if (error) throw error;
+    invoice.sortOrder = nextSortOrder;
   }
 
   state.workSortMode = false;
@@ -4082,7 +4076,7 @@ async function reorderInvoiceSortOrder() {
   els.sortToggle.textContent = "송장순서";
   state.currentGroup = 0;
   await loadPickingData();
-  toast(`송장순서 재정렬 완료: ${ordered.length}건`);
+  toast(`${sessionLabel} 송장순서 재정렬 완료: ${ordered.length}건`);
 }
 
 async function reorderInvoicesByCurrentView() {
