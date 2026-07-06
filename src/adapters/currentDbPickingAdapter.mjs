@@ -72,6 +72,7 @@ export function normalizeCurrentDbItem(item = {}) {
     optionName: firstText(item.p_option, item.option_name),
     quantity: firstNumber(item.qty, item.o_amount, item.quantity) ?? 1,
     itemSalesAmount: firstNumber(item.sellpia_item_sales_amount, item.item_sales_amount),
+    sellpiaMemo1: firstText(item.o_shop_memo, item.shop_memo, item.memo1),
     sellpiaMemo2: firstText(item.o_shop_memo2, item.shop_memo2, item.memo2),
     sellpiaLocation: firstText(item.p_location, item.location),
     inspectionMemo: firstText(item.insp_memo, item.inspection_memo),

@@ -411,10 +411,22 @@ function invoiceHasLabelTarget(invoice) {
   return (invoice.items || []).some(itemHasLabelTarget);
 }
 
+function itemManagementMemo(item) {
+  return String(
+    item?.sellpiaMemo1 ||
+      item?.raw?.o_shop_memo ||
+      item?.raw?.shop_memo ||
+      item?.raw?.memo1 ||
+      item?.pickingState?.drawerMemo ||
+      item?.shortageState?.drawerMemo ||
+      "",
+  ).trim();
+}
+
 function invoiceDrawerValue(invoice) {
   return String(
-    invoice.sellpiaMemo1 ||
-      (invoice.items || []).find((item) => String(item.pickingState?.drawerMemo || "").trim())?.pickingState?.drawerMemo ||
+    (invoice.items || []).map(itemManagementMemo).find(Boolean) ||
+      invoice.sellpiaMemo1 ||
       "",
   ).trim();
 }
@@ -2176,7 +2188,7 @@ function updateShortageReceivingStatus(openRows = []) {
 }
 
 function drawerMemoForShortageRow(row) {
-  return String(row?.state?.drawerMemo || row?.item?.pickingState?.drawerMemo || invoiceDrawerValue(row?.invoice) || "").trim();
+  return String(row?.state?.drawerMemo || itemManagementMemo(row?.item) || invoiceDrawerValue(row?.invoice) || "").trim();
 }
 
 function shortageRowMatchesSearch(row) {
@@ -3327,9 +3339,17 @@ async function savePickingRow(invoice, item, eventType = null, eventOverrides = 
 }
 
 async function saveDrawerForInvoice(invoice, drawerMemo) {
+  if (!allowWrites) {
+    toast("?쎄린?꾩슜?낅땲?? URL??write=0???쒓굅?섎㈃ ??ν븷 ???덉뒿?덈떎.");
+    return;
+  }
   for (const item of invoice.items || []) {
     patchLocalPickingState(invoice, item, { drawerMemo });
     await savePickingRow(invoice, item, null, { drawerMemo });
+    item.sellpiaMemo1 = drawerMemo;
+    if (item.raw) item.raw.o_shop_memo = drawerMemo;
+    const { error } = await db.from("order_items").update({ o_shop_memo: drawerMemo }).eq("ord_no", invoice.orderGroupNo).eq("item_no", item.sellpiaItemNo);
+    if (error) throw error;
   }
 }
 
@@ -4232,6 +4252,10 @@ async function saveSelectedShortageMemo(shortageKey = state.selectedShortageKey)
     drawerMemo,
   });
   if (!ok) return;
+  row.item.sellpiaMemo1 = drawerMemo;
+  if (row.item.raw) row.item.raw.o_shop_memo = drawerMemo;
+  const { error } = await db.from("order_items").update({ o_shop_memo: drawerMemo }).eq("ord_no", row.invoice.orderGroupNo).eq("item_no", row.item.sellpiaItemNo);
+  if (error) throw error;
   state.selectedShortageKey = shortageKey;
   renderWorkflowSurfaces();
   toast("미송 메모 저장 완료");
