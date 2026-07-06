@@ -1183,6 +1183,13 @@ function shortageLabelSourceInvoices() {
   );
 }
 
+function compactReceiptDateLabel(value) {
+  const key = String(value || "").slice(0, 10);
+  const match = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return `${match[2]}${match[3]}`;
+  return key.replace(/\D/g, "").slice(-4) || "날짜없음";
+}
+
 function shortageInvoiceDisplayLabel(invoice) {
   const targetKey = systemInvoiceKey(invoice);
   if (!targetKey) return "미송";
@@ -1192,14 +1199,18 @@ function shortageInvoiceDisplayLabel(invoice) {
     if (!key) continue;
     const receiptDate = String(row.receiptDate || "").slice(0, 10) || "날짜없음";
     counters[receiptDate] = (counters[receiptDate] || 0) + 1;
-    if (key === targetKey) return `${receiptDate}-미송${counters[receiptDate]}`;
+    if (key === targetKey) return `${compactReceiptDateLabel(receiptDate)}미송${counters[receiptDate]}`;
   }
   const fallbackDate = String(invoice?.receiptDate || "").slice(0, 10) || "날짜없음";
-  return `${fallbackDate}-미송`;
+  return `${compactReceiptDateLabel(fallbackDate)}미송`;
 }
 
 function invoicePrimaryWorkflowLabel(invoice, fallbackIndex = 0) {
-  return invoiceHasRepickedShortage(invoice) ? shortageInvoiceDisplayLabel(invoice) : visibleInvoiceSequenceLabel(invoice, fallbackIndex);
+  if (!invoiceHasRepickedShortage(invoice)) return visibleInvoiceSequenceLabel(invoice, fallbackIndex);
+  const shortageLabel = shortageInvoiceDisplayLabel(invoice);
+  const receiptDate = String(invoice?.receiptDate || "").slice(0, 10);
+  if (receiptDate && receiptDate === state.selectedDate) return `${visibleInvoiceSequenceLabel(invoice, fallbackIndex)} / ${shortageLabel}`;
+  return shortageLabel;
 }
 
 function invoiceSecondaryWorkflowLabel(invoice, fallbackIndex = 0) {
