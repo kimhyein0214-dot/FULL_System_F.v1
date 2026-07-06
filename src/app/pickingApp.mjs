@@ -821,7 +821,7 @@ function sortPickingRows(rows) {
 }
 
 function rebuildGroups() {
-  const invoices = sortInvoices(state.viewModel?.invoices || []);
+  const invoices = workOrderedInvoices();
   state.groups = [];
   state.groupInfos = [];
 
@@ -852,7 +852,7 @@ function rebuildGroups() {
 function currentVisibleInvoices() {
   const search = state.searchText.trim().toLowerCase();
   const statusView = state.filterMode !== "all" || search;
-  const base = statusView ? sortInvoices(state.viewModel?.invoices || []) : state.groups[state.currentGroup] || [];
+  const base = statusView ? workOrderedInvoices() : state.groups[state.currentGroup] || [];
 
   return base
     .filter((invoice) => invoiceMatchesFilter(invoice, state.filterMode))
