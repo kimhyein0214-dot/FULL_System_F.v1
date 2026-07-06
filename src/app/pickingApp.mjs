@@ -494,9 +494,9 @@ function compareWorkInvoices(a, b) {
   const bStats = invoiceStats(b);
   return (
     invoiceSessionRank(a) - invoiceSessionRank(b) ||
+    (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
     aStats.total - bStats.total ||
     aStats.qty - bStats.qty ||
-    (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
     String(a.orderGroupNo).localeCompare(String(b.orderGroupNo), "ko", { numeric: true })
   );
 }
@@ -3579,7 +3579,7 @@ function buildToggleCsvRows() {
     "주문메모",
   ];
   const rows = [headers];
-  exportOrderedInvoices().forEach((invoice) => {
+  workOrderedInvoices().forEach((invoice) => {
     (invoice.items || []).forEach((item) => {
       rows.push([
         invoice.orderGroupNo || "",
