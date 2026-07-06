@@ -13,9 +13,9 @@ function compareNullableNumbers(a, b) {
 }
 
 function compareItems(a, b) {
-  const sort = compareNullableNumbers(a.sortOrder, b.sortOrder);
-  if (sort !== 0) return sort;
-  return compareNullableNumbers(a.itemOrderIndex, b.itemOrderIndex);
+  const itemOrder = compareNullableNumbers(a.itemOrderIndex, b.itemOrderIndex);
+  if (itemOrder !== 0) return itemOrder;
+  return compareNullableNumbers(a.sortOrder, b.sortOrder);
 }
 
 function sessionRank(value) {
