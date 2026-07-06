@@ -525,6 +525,11 @@ function workOrderedInvoices() {
   return orderedInvoicesForSystemSequence(state.viewModel?.invoices || []);
 }
 
+function frontOrderedInvoicesForExport() {
+  const grouped = (state.groups || []).flat();
+  return grouped.length ? grouped : workOrderedInvoices();
+}
+
 function workflowOrderedInvoices() {
   return orderedInvoicesForSystemSequence(state.workflowQueues?.viewModel?.invoices || []);
 }
@@ -3579,7 +3584,7 @@ function buildToggleCsvRows() {
     "주문메모",
   ];
   const rows = [headers];
-  workOrderedInvoices().forEach((invoice) => {
+  frontOrderedInvoicesForExport().forEach((invoice) => {
     (invoice.items || []).forEach((item) => {
       rows.push([
         invoice.orderGroupNo || "",
