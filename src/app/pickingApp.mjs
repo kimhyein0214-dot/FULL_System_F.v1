@@ -1,5 +1,5 @@
 import { loadWorkflowQueues } from "../adapters/workflowEventAdapter.mjs?v=20260703-workflow-drawer1";
-import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260706-item-order1";
+import { buildPickingViewModel } from "../workflows/picking/buildPickingViewModel.mjs?v=20260706-item-row-order1";
 import {
   buildWorkflowState,
   completedInvoicesForInspection,
@@ -509,14 +509,21 @@ function invoiceSessionRank(invoice) {
   return 2;
 }
 
+function invoiceItemKindCount(invoice) {
+  const keys = (invoice?.items || [])
+    .map((item) => String(item.ownCode || item.sellpiaProductCode || item.productName || item.sellpiaItemNo || "").trim())
+    .filter(Boolean);
+  return new Set(keys).size || (invoice?.items || []).length;
+}
+
 function compareWorkInvoices(a, b) {
   const aStats = invoiceStats(a);
   const bStats = invoiceStats(b);
   return (
     invoiceSessionRank(a) - invoiceSessionRank(b) ||
-    (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
-    aStats.total - bStats.total ||
+    invoiceItemKindCount(a) - invoiceItemKindCount(b) ||
     aStats.qty - bStats.qty ||
+    (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
     String(a.orderGroupNo).localeCompare(String(b.orderGroupNo), "ko", { numeric: true })
   );
 }
@@ -794,12 +801,7 @@ function buildRouteOptimizedExportInvoices(invoices) {
 }
 
 function exportOrderedInvoices(invoices = state.viewModel?.invoices || []) {
-  const rows = (invoices || []).map((invoice, index) => ({
-    ...invoice,
-    _exportOriginalRank: exportOriginalRank(invoice, index + 1),
-    _exportSortMetrics: exportSortMetrics(invoice),
-  }));
-  return buildRouteOptimizedExportInvoices(rows).map((invoice, index) => ({ ...invoice, plannedPrintSeqNo: index + 1 }));
+  return orderedInvoicesForSystemSequence(invoices).map((invoice, index) => ({ ...invoice, plannedPrintSeqNo: index + 1 }));
 }
 
 function sortInspectionInvoices(invoices) {
@@ -1037,8 +1039,7 @@ function invoiceSequenceWithGroupLabel(invoice, fallbackIndex = 0) {
 function itemSequenceNo(item, fallbackIndex = 0) {
   const explicit = Number(item?.itemOrderIndex || 0);
   if (explicit) return explicit;
-  const suffix = String(item?.sellpiaItemNo || "").match(/(?:_\[(\d{1,3})\]|\((\d{1,3})\)|_(\d{1,3}))$/);
-  return suffix ? Number(suffix[1] || suffix[2] || suffix[3]) : fallbackIndex + 1;
+  return fallbackIndex + 1;
 }
 
 function formatAmount(value) {
@@ -1146,14 +1147,17 @@ function invoiceTextForSearch(invoice) {
 }
 
 function invoiceHasRepickedShortage(invoice) {
+  const invoiceState = workflowInvoiceState(invoice);
+  if (invoiceState?.shortageInvoiceRepicked && !invoiceState?.inspected && !invoiceState?.cancelled) return true;
   return (invoice.items || []).some((item) => {
     const itemState = workflowItemState(invoice, item);
-    return itemState?.shortageRepicked && !itemState?.inspected && !itemState?.cancelled;
+    return (itemHasOpenWorkflowShortage(invoice, item) || itemState?.shortageRepicked) && !itemState?.inspected && !itemState?.cancelled;
   });
 }
 
 function invoiceMatchesInspectionFilter(invoice) {
   const invoiceState = workflowInvoiceState(invoice);
+  if (state.inspectionFilter === "normal") return !invoiceHasRepickedShortage(invoice);
   if (state.inspectionFilter === "gold") return invoiceHasGold(invoice);
   if (state.inspectionFilter === "hold") return Boolean(invoiceState?.hold);
   if (state.inspectionFilter === "shortage") return invoiceHasRepickedShortage(invoice);
@@ -1164,6 +1168,20 @@ function invoiceMatchesInspectionSearch(invoice) {
   const search = state.inspectionSearchText.trim().toLowerCase();
   if (!search) return true;
   return invoiceTextForSearch(invoice).includes(search);
+}
+
+function ensureInspectionFilterButtons() {
+  const bar = els.inspectionFilterBar;
+  if (!bar) return;
+  const shortageButton = bar.querySelector("[data-inspection-filter='shortage']");
+  if (shortageButton) shortageButton.textContent = "미송피킹";
+  if (bar.querySelector("[data-inspection-filter='normal']")) return;
+  const button = document.createElement("button");
+  button.className = "filter-chip";
+  button.dataset.inspectionFilter = "normal";
+  button.type = "button";
+  button.textContent = "일반검품";
+  bar.insertBefore(button, shortageButton || bar.querySelector("[data-inspection-filter='hold']") || null);
 }
 
 function mergeInvoicesUnique(...lists) {
@@ -1182,14 +1200,16 @@ function mergeInvoicesUnique(...lists) {
 
 function isInspectionVisibleBaseInvoice(invoice) {
   const invoiceState = workflowInvoiceState(invoice);
-  return !invoiceState?.cancelled && !invoiceHasOpenWorkflowShortage(invoice);
+  return !invoiceState?.cancelled;
 }
 
 function inspectionSourceInvoices() {
   const pickingReadyInvoices = (state.viewModel?.invoices || []).filter(invoiceReadyFromPicking);
+  const shortageInvoices = (state.viewModel?.invoices || []).filter(invoiceHasOpenWorkflowShortage);
   return sortInspectionInvoices(
     mergeInvoicesUnique(
       pickingReadyInvoices,
+      shortageInvoices,
       state.workflowQueues?.inspectionInvoices || [],
       state.workflowQueues?.inspectionCompletedInvoices || [],
     ).filter(isInspectionVisibleBaseInvoice),
@@ -2288,6 +2308,26 @@ function renderShortageRows(rows) {
     .join("");
 }
 
+function renderShortageInvoiceItems(invoice) {
+  return `<div class="workflow-item-table shortage-invoice-table">
+    ${(invoice.items || [])
+      .map((item, index) => {
+        const itemState = workflowItemState(invoice, item);
+        const imageUrl = productImageUrl(item.sellpiaProductCode);
+        const shortage = workflowAwareShortageQty(itemState, item);
+        return `<div class="workflow-item-row ${shortage > 0 ? "repicked" : ""}">
+          <span>${itemSequenceNo(item, index)}</span>
+          <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" ${photoImgAttrs(imageUrl, photoTitleForItem(item))} alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "?ъ쭊"}</div>
+          <strong>${escapeHtml(item.ownCode || "-")}</strong>
+          <em class="${optionHasBarChange(item) ? "option-change" : ""}">${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</em>
+          <b>${Number(item.quantity) || 1}개</b>
+          <small>${shortage > 0 ? `미송 ${shortage}` : "정상"}</small>
+        </div>`;
+      })
+      .join("")}
+  </div>`;
+}
+
 function renderShortagePanels() {
   const rows = shortageRowsForCurrentFilter();
   const openCount = state.workflowQueues?.shortageItems?.length || 0;
@@ -2348,7 +2388,7 @@ function renderShortagePanels() {
   const selectedKey = workflowItemKey(selected.invoice, selected.item);
   const selectedCompleted = Boolean(selected.completed);
   const receiving = receivingLabelEntryForItem(selected.item);
-  const primaryAction = selectedCompleted
+  const primaryAction = false && selectedCompleted
     ? `<button class="btn" data-action="shortage-repick-reopen" data-order-group="${escapeHtml(selected.invoice.orderGroupNo)}" data-item-no="${escapeHtml(selected.item.sellpiaItemNo)}" type="button" ${repickDisabled}>완료취소</button>`
     : `<button class="btn primary" data-action="shortage-repicked" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>피킹완료</button>`;
   els.shortageDetail.innerHTML = `<div class="workflow-detail-card">
@@ -2359,7 +2399,7 @@ function renderShortagePanels() {
       </div>
       <div class="workflow-detail-actions">
         ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
-        ${primaryAction}
+        <span class="workflow-row-badge warn">메모입력용</span>
       </div>
     </div>
     <div class="workflow-detail-main">
@@ -2388,10 +2428,12 @@ function renderShortagePanels() {
         </div>
       </div>
     </div>
+    ${renderShortageInvoiceItems(selected.invoice)}
   </div>`;
 }
 
 function renderInspectionPanels(options = {}) {
+  ensureInspectionFilterButtons();
   const renderList = options.list !== false;
   const allInvoices = inspectionSourceInvoices();
   const completedCount = allInvoices.filter((invoice) => workflowInvoiceState(invoice)?.inspected).length;
@@ -4166,6 +4208,9 @@ async function completeSelectedShortagePicking(shortageKey = state.selectedShort
     toast("미송피킹 대상을 찾지 못했습니다.");
     return;
   }
+
+  toast("미송피킹 완료처리는 사용하지 않습니다. 필요한 내용은 메모 저장으로 남겨주세요.");
+  return;
 
   const ok = await saveWorkflowItemEvent(row.invoice, row.item, "shortage_repick_completed", {
     quantity: 0,

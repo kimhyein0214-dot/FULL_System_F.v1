@@ -3,7 +3,7 @@ import {
   normalizeCurrentDbItem,
   normalizeCurrentDbOrder,
   normalizePickingState,
-} from "../../adapters/currentDbPickingAdapter.mjs?v=20260706-management-memo1";
+} from "../../adapters/currentDbPickingAdapter.mjs?v=20260706-item-row-order1";
 
 function compareNullableNumbers(a, b) {
   if (a === null && b === null) return 0;
@@ -13,9 +13,17 @@ function compareNullableNumbers(a, b) {
 }
 
 function compareItems(a, b) {
-  const itemOrder = compareNullableNumbers(a.itemOrderIndex, b.itemOrderIndex);
-  if (itemOrder !== 0) return itemOrder;
-  return compareNullableNumbers(a.sortOrder, b.sortOrder);
+  const rowOrder = compareNullableNumbers(a.sortOrder, b.sortOrder);
+  if (rowOrder !== 0) return rowOrder;
+  return compareNullableNumbers(a.itemOrderIndex, b.itemOrderIndex);
+}
+
+function normalizeInvoiceItems(items = []) {
+  return [...items].sort(compareItems).map((item, index) => ({
+    ...item,
+    sourceItemOrderIndex: item.itemOrderIndex,
+    itemOrderIndex: index + 1,
+  }));
 }
 
 function sessionRank(value) {
@@ -96,7 +104,7 @@ export function buildPickingViewModel({
   const invoices = Array.from(invoiceByGroup.values())
     .map((invoice) => ({
       ...invoice,
-      items: invoice.items.sort(compareItems),
+      items: normalizeInvoiceItems(invoice.items),
     }))
     .sort(compareInvoices);
 
