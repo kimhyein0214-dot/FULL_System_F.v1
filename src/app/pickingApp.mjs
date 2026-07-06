@@ -403,6 +403,14 @@ function invoiceHasGold(invoice) {
   return (invoice.items || []).some(isGoldItem);
 }
 
+function itemHasLabelTarget(item) {
+  return isGoldItem(item) || isLabelTarget({ privateCode: item?.ownCode || "" });
+}
+
+function invoiceHasLabelTarget(invoice) {
+  return (invoice.items || []).some(itemHasLabelTarget);
+}
+
 function invoiceDrawerValue(invoice) {
   return String(
     invoice.sellpiaMemo1 ||
@@ -1038,7 +1046,7 @@ function renderInspectionItemHeader(includeLabelNo = false) {
 }
 
 function inspectionLabelNumberMap(selectedInvoice) {
-  if (!selectedInvoice || !invoiceHasGold(selectedInvoice)) return new Map();
+  if (!selectedInvoice || !invoiceHasLabelTarget(selectedInvoice)) return new Map();
   const selectedKey = selectedInvoice.orderGroupNo || selectedInvoice.invoiceNo;
   const map = new Map();
   const weekdaySeq = {};
@@ -2343,7 +2351,7 @@ function renderShortagePanels() {
         <dl>
           <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, invoiceItemIndex(selected.invoice, selected.item))}번</dd></div>
           <div><dt>송장순서</dt><dd>${escapeHtml(invoiceSequenceWithGroupLabel(selected.invoice))}</dd></div>
-          <div><dt>부족수량</dt><dd>${shortageQtyInput(selected.invoice, selected.item, selectedCompleted ? previousShortageQuantity(selected.invoice, selected.item) : Number(selectedState?.shortageQty || 0) || 1, "workflow-number-input")}</dd></div>
+          <div><dt>부족수량</dt><dd class="shortage-qty-with-order">${shortageQtyInput(selected.invoice, selected.item, selectedCompleted ? previousShortageQuantity(selected.invoice, selected.item) : Number(selectedState?.shortageQty || 0) || 1, "workflow-number-input")}<small>주문 ${Number(selected.item.quantity) || 1}개</small></dd></div>
           ${receiving ? `<div><dt>입고라벨</dt><dd>${escapeHtml(`입고 ${receiving.qty || "-"}개`)}${receiving.optionName ? `<small>${escapeHtml(receiving.optionName)}</small>` : ""}</dd></div>` : ""}
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>
           <div><dt>마지막 이벤트</dt><dd>${escapeHtml(formatShortDate(selectedState?.lastEventAt))}</dd></div>
@@ -2470,7 +2478,8 @@ function renderInspectionPanels(options = {}) {
   }).length;
   const selectedIndex = invoices.findIndex((invoice) => invoice.orderGroupNo === selected.orderGroupNo);
   const selectedGold = invoiceHasGold(selected);
-  const labelNoByItem = selectedGold ? inspectionLabelNumberMap(selected) : new Map();
+  const selectedLabelTarget = invoiceHasLabelTarget(selected);
+  const labelNoByItem = selectedLabelTarget ? inspectionLabelNumberMap(selected) : new Map();
   const selectedOrderTotal = formatAmount(selected.orderTotalAmount);
   const selectedHeaderMeta = [
     selected.displayName || selected.csDisplayName || "-",
@@ -2501,8 +2510,8 @@ function renderInspectionPanels(options = {}) {
         ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
       </div>
     </div>
-    <div class="workflow-item-table inspection-item-table ${selectedGold ? "has-label-number" : ""}">
-      ${renderInspectionItemHeader(selectedGold)}
+    <div class="workflow-item-table inspection-item-table ${selectedLabelTarget ? "has-label-number" : ""}">
+      ${renderInspectionItemHeader(selectedLabelTarget)}
       ${(selected.items || [])
         .map((item, index) => {
           const itemState = workflowItemState(selected, item);
@@ -2525,7 +2534,7 @@ function renderInspectionPanels(options = {}) {
               : "";
           return `<div class="workflow-item-row ${rowClass}">
             <span class="workflow-seq-cell">${itemSequenceNo(item, index)}</span>
-            ${selectedGold ? `<span class="workflow-label-cell">${escapeHtml(labelNo)}</span>` : ""}
+            ${selectedLabelTarget ? `<span class="workflow-label-cell">${escapeHtml(labelNo)}</span>` : ""}
             <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" ${photoImgAttrs(imageUrl, photoTitleForItem(item))} alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
             <em class="${optionClass(item, "workflow-option-cell")}">${escapeHtml(option)}</em>
             <b>${Number(item.quantity) || 1}</b>
