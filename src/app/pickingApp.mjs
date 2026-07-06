@@ -2786,7 +2786,7 @@ function buildCsMessage(row) {
     .replace(/#{OPTION}/g, option);
 }
 
-function allCsRows() {
+function legacyAllCsRows() {
   const invoices = state.workflowQueues?.viewModel?.invoices || state.viewModel?.invoices || [];
   const rows = [];
   for (const invoice of invoices) {
@@ -2845,7 +2845,7 @@ function allCsRows() {
     .sort((a, b) => String(b.shortageDate).localeCompare(String(a.shortageDate)) || visibleInvoiceSequenceNo(a.invoice) - visibleInvoiceSequenceNo(b.invoice));
 }
 
-function filteredCsRows() {
+function legacyFilteredCsRows() {
   const search = state.csSearchText.trim().toLowerCase();
   const allRows = allCsRows();
   const byDay = classifyCsRowsByDay(allRows);
@@ -2870,7 +2870,7 @@ function filteredCsRows() {
   });
 }
 
-function renderCsPanels() {
+function legacyRenderCsPanels() {
   if (els.csSearchInput && els.csSearchInput.value !== state.csSearchText) els.csSearchInput.value = state.csSearchText;
   if (state.workflowQueueError) {
     renderWorkflowEmpty(els.csListBody, state.workflowQueueError);
@@ -2953,6 +2953,158 @@ function renderCsPanels() {
       <button class="btn primary" data-cs-order-memo-save data-order-group="${escapeHtml(selected.invoice.orderGroupNo)}" data-item-no="${escapeHtml(selected.item.sellpiaItemNo)}" type="button">주문메모 저장</button>
     </div>
   </div>`;
+}
+
+function csSourceInvoices() {
+  return sortInspectionInvoices(
+    mergeInvoicesUnique(
+      state.viewModel?.invoices || [],
+      state.workflowQueues?.viewModel?.invoices || [],
+      state.workflowQueues?.inspectionInvoices || [],
+      state.workflowQueues?.inspectionCompletedInvoices || [],
+    ).filter(isInspectionVisibleBaseInvoice),
+  );
+}
+
+function allCsRows() {
+  return csSourceInvoices().map((invoice, index) => ({
+    key: invoice.orderGroupNo || invoice.invoiceNo || `cs-${index}`,
+    invoice,
+    index,
+  }));
+}
+
+function filteredCsRows() {
+  const search = state.csSearchText.trim().toLowerCase();
+  return allCsRows().filter((row) => {
+    if (!search) return true;
+    return `${invoiceTextForSearch(row.invoice)} ${invoiceDrawerValue(row.invoice)}`.toLowerCase().includes(search);
+  });
+}
+
+function renderCsPanels() {
+  if (els.csSearchInput && els.csSearchInput.value !== state.csSearchText) els.csSearchInput.value = state.csSearchText;
+  if (state.workflowQueueError) {
+    renderWorkflowEmpty(els.csListBody, state.workflowQueueError);
+    renderWorkflowEmpty(els.csDetail, "CS 데이터를 불러오지 못했습니다.");
+    return;
+  }
+  if (!state.workflowQueues && !state.viewModel) {
+    renderWorkflowEmpty(els.csListBody, "데이터를 불러오는 중입니다.");
+    renderWorkflowEmpty(els.csDetail, "송장을 선택하면 메모를 수정할 수 있습니다.");
+    return;
+  }
+
+  state.csDateFilter = "all";
+  const allRows = allCsRows();
+  if (els.csDateTabs) {
+    els.csDateTabs.innerHTML = `<button class="filter-chip active" data-cs-date="all" type="button">전체 ${allRows.length}</button>`;
+  }
+  const rows = filteredCsRows();
+  if (els.csListCount) els.csListCount.textContent = `${rows.length}건 / 전체 ${allRows.length}건`;
+  if (!rows.length) {
+    renderWorkflowEmpty(els.csListBody, "현재 조건에 맞는 송장이 없습니다.");
+    renderWorkflowEmpty(els.csDetail, "검색어를 조정해보세요.");
+    return;
+  }
+
+  if (!rows.some((row) => row.key === state.selectedCsKey)) state.selectedCsKey = rows[0].key;
+  els.csListBody.innerHTML = rows
+    .map((row) => {
+      const { invoice } = row;
+      const selected = row.key === state.selectedCsKey;
+      const seller = sellerBadgeMeta(invoice.seller);
+      const invoiceState = workflowInvoiceState(invoice);
+      const shortageCount = invoiceItemsInSellpiaRowOrder(invoice).reduce((sum, item) => sum + workflowAwareShortageQty(workflowItemState(invoice, item), item), 0);
+      return `<button class="workflow-row ${selected ? "selected" : ""}" data-cs-key="${escapeHtml(row.key)}" type="button">
+        <span class="workflow-row-code seq-with-slot">
+          <strong>${escapeHtml(invoicePrimaryWorkflowLabel(invoice, row.index))}</strong>
+          <small>${escapeHtml(invoiceSecondaryWorkflowLabel(invoice, row.index))}</small>
+        </span>
+        <span class="workflow-row-main">
+          <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
+          <small>상품 ${invoice.items?.length || 0}종 · 접수 ${escapeHtml(invoice.receiptDate || "-")}</small>
+          <small>관리메모 ${escapeHtml(invoiceDrawerValue(invoice) || "-")} · 관리메모2 ${shortageCount}</small>
+        </span>
+        <span class="workflow-row-badges">
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+          ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
+          ${invoiceState?.inspected ? '<span class="workflow-row-badge done">완료</span>' : ""}
+          ${shortageCount ? `<span class="workflow-row-badge danger">부족 ${shortageCount}</span>` : ""}
+        </span>
+      </button>`;
+    })
+    .join("");
+
+  const selected = rows.find((row) => row.key === state.selectedCsKey) || rows[0];
+  const invoice = selected.invoice;
+  const seller = sellerBadgeMeta(invoice.seller);
+  const invoiceState = workflowInvoiceState(invoice);
+  const readonlyHint = allowWrites ? "" : "readonly title=\"URL에 write=1이 없으면 저장할 수 없습니다.\"";
+  const memoReadonly = allowWrites ? "" : "readonly";
+  const memoHint = allowWrites ? "" : ' title="URL에 write=1이 없으면 저장할 수 없습니다."';
+  const selectedIndex = rows.findIndex((row) => row.key === selected.key);
+  els.csDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""} ${invoiceState?.inspected ? "is-completed" : ""}">
+      <div class="inspection-title-block">
+        <div class="inspection-title-line">
+          <strong>${escapeHtml(invoicePrimaryWorkflowLabel(invoice, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+        </div>
+        <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · 접수 ${escapeHtml(invoice.receiptDate || "-")} · 송장 ${escapeHtml(invoice.invoiceNo || "-")}</span>
+        <label class="inspection-drawer-box">
+          <span>관리메모</span>
+          <textarea class="drawer-input inspection-drawer-input" data-cs-drawer data-order-group="${escapeHtml(invoice.orderGroupNo)}" rows="2" placeholder="서랍번호 / 메모" ${readonlyHint}>${escapeHtml(invoiceDrawerValue(invoice))}</textarea>
+        </label>
+      </div>
+      <div class="inspection-actions">
+        <span class="invoice-badge inspection-slot-badge">${escapeHtml(invoiceSecondaryWorkflowLabel(invoice, selectedIndex >= 0 ? selectedIndex : 0))}</span>
+        ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
+        ${invoiceState?.inspected ? '<span class="workflow-row-badge done">완료</span>' : ""}
+        ${invoiceHasGold(invoice) ? '<span class="workflow-row-badge gold">골드</span>' : ""}
+      </div>
+    </div>
+    <div class="workflow-item-table inspection-item-table">
+      <div class="workflow-item-row workflow-item-header">
+        <span>상품순서번호</span>
+        <span>사진</span>
+        <span>옵션명</span>
+        <span>수량</span>
+        <span>상품명</span>
+        <span>금액</span>
+        <span>자사코드</span>
+        <span>셀피아코드</span>
+        <span>관리메모2</span>
+        <span>주문메모</span>
+        <span>상태</span>
+      </div>
+      ${invoiceItemsInSellpiaRowOrder(invoice)
+        .map((item, index) => {
+          const itemState = workflowItemState(invoice, item);
+          const imageUrl = productImageUrl(item.sellpiaProductCode);
+          const option = cleanOptionName(item.optionName, item.ownCode) || "-";
+          const product = item.productName || "-";
+          const shortage = workflowAwareShortageQty(itemState, item);
+          const sellpiaOrderMemo = itemSellpiaOrderMemo(invoice, item);
+          return `<div class="workflow-item-row">
+            <span class="workflow-seq-cell">${itemSequenceNo(item, index)}</span>
+            <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" ${photoImgAttrs(imageUrl, photoTitleForItem(item))} alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
+            <em class="${optionClass(item, "workflow-option-cell")}">${escapeHtml(option)}</em>
+            <b>${Number(item.quantity) || 1}</b>
+            <strong class="workflow-product-cell">${escapeHtml(product)}</strong>
+            <span class="workflow-amount-cell">${escapeHtml(formatAmount(item.itemSalesAmount))}</span>
+            <strong class="workflow-code-cell">${escapeHtml(item.ownCode || "-")}</strong>
+            <span class="workflow-sellpia-cell">${escapeHtml(item.sellpiaProductCode || "-")}</span>
+            ${shortageQtyInput(invoice, item, shortage, "workflow-shortage-cell compact")}
+            <label class="inspection-memo-cell ${sellpiaOrderMemo ? "has-value" : ""}">
+              <textarea data-cs-order-memo data-order-group="${escapeHtml(invoice.orderGroupNo)}" data-item-no="${escapeHtml(item.sellpiaItemNo)}" rows="2" placeholder="셀피아 주문메모" ${memoReadonly}${memoHint}>${escapeHtml(sellpiaOrderMemo)}</textarea>
+            </label>
+            <small class="workflow-status-cell">
+              <span>${invoiceState?.inspected ? "검품완료" : itemState?.shortageRepicked ? "미송피킹" : "작업중"}</span>
+            </small>
+          </div>`;
+        })
+        .join("")}
+    </div>`;
 }
 
 function renderCompletedPanels() {
@@ -4546,7 +4698,7 @@ async function onOrderListClick(event) {
 }
 
 function onDrawerChange(event) {
-  const input = event.target.closest("[data-action='drawer'], [data-inspection-drawer]");
+  const input = event.target.closest("[data-action='drawer'], [data-inspection-drawer], [data-cs-drawer]");
   if (!input) return;
   const invoice = findInvoiceAndItem(input.dataset.orderGroup, "")?.invoice || (state.viewModel?.invoices || []).find((row) => row.orderGroupNo === input.dataset.orderGroup);
   if (!invoice) return;
@@ -4555,6 +4707,7 @@ function onDrawerChange(event) {
     .then(() => {
       invoice.sellpiaMemo1 = value;
       if (input.matches("[data-inspection-drawer]")) renderInspectionPanels();
+      else if (input.matches("[data-cs-drawer]")) renderCsPanels();
       else render();
       toast("서랍번호 저장");
     })
@@ -5219,6 +5372,24 @@ function bindEvents() {
     if (!button) return;
     state.selectedCsKey = button.dataset.csKey;
     renderCsPanels();
+  });
+  els.csDetail?.addEventListener("input", (event) => {
+    const field = event.target.closest("[data-cs-order-memo]");
+    if (!field) return;
+    field.closest(".inspection-memo-cell")?.classList.toggle("has-value", Boolean(field.value.trim()));
+  });
+  els.csDetail?.addEventListener("change", (event) => {
+    if (event.target.closest("[data-shortage-input]")) {
+      onShortageInputChange(event);
+      return;
+    }
+    if (event.target.closest("[data-cs-drawer]")) {
+      onDrawerChange(event);
+      return;
+    }
+    const field = event.target.closest("[data-cs-order-memo]");
+    if (!field) return;
+    saveInspectionSellpiaOrderMemo(field.dataset.orderGroup || "", field.dataset.itemNo || "", field.value).catch(showError);
   });
   els.csDetail?.addEventListener("click", (event) => {
     const memoButton = event.target.closest("[data-cs-order-memo-save]");
