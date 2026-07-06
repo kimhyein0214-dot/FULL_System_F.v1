@@ -1173,6 +1173,39 @@ function invoiceHasRepickedShortage(invoice) {
   });
 }
 
+function shortageLabelSourceInvoices() {
+  return sortInspectionInvoices(
+    mergeInvoicesUnique(
+      state.workflowQueues?.viewModel?.invoices || [],
+      state.viewModel?.invoices || [],
+      state.workflowQueues?.inspectionInvoices || [],
+    ).filter(invoiceHasRepickedShortage),
+  );
+}
+
+function shortageInvoiceDisplayLabel(invoice) {
+  const targetKey = systemInvoiceKey(invoice);
+  if (!targetKey) return "미송";
+  const counters = {};
+  for (const row of shortageLabelSourceInvoices()) {
+    const key = systemInvoiceKey(row);
+    if (!key) continue;
+    const receiptDate = String(row.receiptDate || "").slice(0, 10) || "날짜없음";
+    counters[receiptDate] = (counters[receiptDate] || 0) + 1;
+    if (key === targetKey) return `${receiptDate}-미송${counters[receiptDate]}`;
+  }
+  const fallbackDate = String(invoice?.receiptDate || "").slice(0, 10) || "날짜없음";
+  return `${fallbackDate}-미송`;
+}
+
+function invoicePrimaryWorkflowLabel(invoice, fallbackIndex = 0) {
+  return invoiceHasRepickedShortage(invoice) ? shortageInvoiceDisplayLabel(invoice) : visibleInvoiceSequenceLabel(invoice, fallbackIndex);
+}
+
+function invoiceSecondaryWorkflowLabel(invoice, fallbackIndex = 0) {
+  return invoiceHasRepickedShortage(invoice) ? invoice.invoiceNo || "" : invoiceGroupSlotLabel(invoice, fallbackIndex);
+}
+
 function invoiceMatchesInspectionFilter(invoice) {
   const invoiceState = workflowInvoiceState(invoice);
   if (state.inspectionFilter === "normal") return !invoiceHasRepickedShortage(invoice);
@@ -1223,7 +1256,7 @@ function isInspectionVisibleBaseInvoice(invoice) {
 
 function inspectionSourceInvoices() {
   const pickingReadyInvoices = (state.viewModel?.invoices || []).filter(invoiceReadyFromPicking);
-  const shortageInvoices = (state.viewModel?.invoices || []).filter(invoiceHasOpenWorkflowShortage);
+  const shortageInvoices = mergeInvoicesUnique(state.workflowQueues?.viewModel?.invoices || [], state.viewModel?.invoices || []).filter(invoiceHasRepickedShortage);
   return sortInspectionInvoices(
     mergeInvoicesUnique(
       pickingReadyInvoices,
@@ -1846,7 +1879,7 @@ function sideShortcutConfig() {
         ["shortage", "all", "전체"],
         ["shortage", "code", "자사코드별"],
         ["shortage", "drawer", "서랍입력"],
-        ["shortage", "completed", "피킹완료"],
+        ["shortage", "completed", "기존완료"],
       ],
     };
   }
@@ -2066,7 +2099,7 @@ function shortageFilterLabel(filter = state.shortageFilter) {
       all: "전체",
       code: "자사코드별",
       drawer: "서랍입력",
-      completed: "피킹완료",
+      completed: "기존완료",
     }[filter] || "전체"
   );
 }
@@ -2230,6 +2263,7 @@ function shortageRowMatchesSearch(row) {
   const invoice = row.invoice || {};
   const drawerMemo = drawerMemoForShortageRow(row);
   const sequenceNo = String(visibleInvoiceSequenceNo(invoice) || "");
+  const shortageLabel = shortageInvoiceDisplayLabel(invoice);
   const text = [
     invoice.invoiceNo,
     invoice.orderGroupNo,
@@ -2239,6 +2273,7 @@ function shortageRowMatchesSearch(row) {
     invoice.buyerName,
     sequenceNo,
     visibleInvoiceSequenceLabel(invoice),
+    shortageLabel,
     drawerMemo,
   ]
     .join(" ")
@@ -2288,18 +2323,18 @@ function renderShortageRow({ invoice, item, state: itemState, completed }) {
   const key = workflowItemKey(invoice, item);
   const orderNo = itemOrderNo(item, invoiceItemIndex(invoice, item));
   const receiptDate = String(invoice.receiptDate || "").slice(0, 10);
-  const invoiceSeq = visibleInvoiceSequenceLabel(invoice);
+  const invoiceSeq = shortageInvoiceDisplayLabel(invoice);
   const receiving = receivingLabelEntryForItem(item);
   return `<button class="workflow-row ${key === state.selectedShortageKey ? "selected" : ""} ${completed ? "is-completed" : ""} ${receiving ? "has-receiving" : ""}" data-shortage-key="${escapeHtml(key)}" type="button">
     <span class="workflow-row-code">${escapeHtml(item.ownCode || "-")}</span>
     <span class="workflow-row-main">
       <strong>${escapeHtml(cleanOptionName(item.optionName, item.ownCode) || item.productName || "-")}</strong>
       <span class="workflow-row-order">상품순서 ${orderNo}번</span>
-      <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · 송장 ${escapeHtml(invoiceSeq)}</small>
+      <small>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · ${escapeHtml(invoiceSeq)}</small>
       ${receiptDate ? `<small class="workflow-row-receipt">접수 ${escapeHtml(receiptDate)}</small>` : ""}
       ${receiving ? `<small class="receiving-row-note">입고 ${escapeHtml(receiving.qty || "-")}개</small>` : ""}
     </span>
-    <span class="workflow-row-badge ${completed ? "done" : "danger"}">${completed ? "피킹완료" : `미송 ${Number(itemState?.shortageQty || 0) || 1}`}</span>
+    <span class="workflow-row-badge ${completed ? "done" : "danger"}">${completed ? "기존완료" : `미송 ${Number(itemState?.shortageQty || 0) || 1}`}</span>
   </button>`;
 }
 
@@ -2401,9 +2436,6 @@ function renderShortagePanels() {
   const selectedKey = workflowItemKey(selected.invoice, selected.item);
   const selectedCompleted = Boolean(selected.completed);
   const receiving = receivingLabelEntryForItem(selected.item);
-  const primaryAction = false && selectedCompleted
-    ? `<button class="btn" data-action="shortage-repick-reopen" data-order-group="${escapeHtml(selected.invoice.orderGroupNo)}" data-item-no="${escapeHtml(selected.item.sellpiaItemNo)}" type="button" ${repickDisabled}>완료취소</button>`
-    : `<button class="btn primary" data-action="shortage-repicked" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>피킹완료</button>`;
   els.shortageDetail.innerHTML = `<div class="workflow-detail-card">
     <div class="workflow-detail-head">
       <div>
@@ -2422,7 +2454,8 @@ function renderShortagePanels() {
         <p>${escapeHtml(selected.item.productName || "")}</p>
         <dl>
           <div><dt>상품순서</dt><dd>${itemOrderNo(selected.item, invoiceItemIndex(selected.invoice, selected.item))}번</dd></div>
-          <div><dt>송장순서</dt><dd>${escapeHtml(invoiceSequenceWithGroupLabel(selected.invoice))}</dd></div>
+          <div><dt>미송표기</dt><dd>${escapeHtml(shortageInvoiceDisplayLabel(selected.invoice))}</dd></div>
+          <div><dt>송장번호</dt><dd>${escapeHtml(selected.invoice.invoiceNo || "-")}</dd></div>
           <div><dt>부족수량</dt><dd class="shortage-qty-with-order">${shortageQtyInput(selected.invoice, selected.item, selectedCompleted ? previousShortageQuantity(selected.invoice, selected.item) : Number(selectedState?.shortageQty || 0) || 1, "workflow-number-input")}<small>주문 ${Number(selected.item.quantity) || 1}개</small></dd></div>
           ${receiving ? `<div><dt>입고라벨</dt><dd>${escapeHtml(`입고 ${receiving.qty || "-"}개`)}${receiving.optionName ? `<small>${escapeHtml(receiving.optionName)}</small>` : ""}</dd></div>` : ""}
           <div><dt>접수일</dt><dd>${escapeHtml(selected.invoice.receiptDate || "-")}</dd></div>
@@ -2437,7 +2470,7 @@ function renderShortagePanels() {
             <span>관리메모2</span>
             <textarea data-shortage-field="memo" rows="2" placeholder="상품별 미송 메모">${escapeHtml(selectedState?.memo || selected.item.sellpiaMemo2 || "")}</textarea>
           </label>
-          ${selectedCompleted ? '<small class="workflow-help-text">피킹완료 상태에서는 완료취소 후 메모를 수정하세요.</small>' : `<button class="btn" data-action="shortage-memo-save" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>메모 저장</button>`}
+          ${selectedCompleted ? '<small class="workflow-help-text">기존 완료 기록입니다. 새 작업에서는 피킹완료 처리를 사용하지 않습니다.</small>' : `<button class="btn" data-action="shortage-memo-save" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>메모 저장</button>`}
         </div>
       </div>
     </div>
@@ -2519,8 +2552,8 @@ function renderInspectionPanels(options = {}) {
           .join("");
         return `<button class="${rowClasses}" data-inspection-group="${escapeHtml(invoice.orderGroupNo)}" type="button">
           <span class="workflow-row-code seq-with-slot">
-            <strong>${escapeHtml(visibleInvoiceSequenceLabel(invoice, index))}</strong>
-            <small>${escapeHtml(invoiceGroupSlotLabel(invoice, index))}</small>
+            <strong>${escapeHtml(invoicePrimaryWorkflowLabel(invoice, index))}</strong>
+            <small>${escapeHtml(invoiceSecondaryWorkflowLabel(invoice, index))}</small>
           </span>
           <span class="workflow-row-main">
             <strong>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</strong>
@@ -2565,7 +2598,7 @@ function renderInspectionPanels(options = {}) {
   els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""} ${selectedCompleted ? "is-completed" : ""}">
       <div class="inspection-title-block">
         <div class="inspection-title-line">
-          <strong>${escapeHtml(visibleInvoiceSequenceLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
+          <strong>${escapeHtml(invoicePrimaryWorkflowLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
         <span>${escapeHtml(selectedHeaderMeta)}</span>
@@ -2575,7 +2608,7 @@ function renderInspectionPanels(options = {}) {
         </label>
       </div>
       <div class="inspection-actions">
-        <span class="invoice-badge inspection-slot-badge">${escapeHtml(invoiceGroupSlotLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</span>
+        <span class="invoice-badge inspection-slot-badge">${escapeHtml(invoiceSecondaryWorkflowLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</span>
         <button class="btn" data-action="${holdAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${holdLabel}</button>
         <button class="btn primary" data-action="${completeAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${completeDisabled} ${completeTitle}>${completeLabel}</button>
         ${selectedCompleted ? '<span class="workflow-row-badge done">완료</span>' : ""}
