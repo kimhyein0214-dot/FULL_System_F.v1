@@ -803,11 +803,21 @@ function exportOrderedInvoices(invoices = state.viewModel?.invoices || []) {
   return orderedInvoicesForSystemSequence(invoices).map((invoice, index) => ({ ...invoice, plannedPrintSeqNo: index + 1 }));
 }
 
+function inspectionDateRank(invoice) {
+  const receiptDate = String(invoice?.receiptDate || "").slice(0, 10);
+  if (receiptDate && receiptDate === state.selectedDate) return 0;
+  return 1;
+}
+
 function sortInspectionInvoices(invoices) {
   return [...(invoices || [])].sort((a, b) => {
-    const aGold = invoiceHasGold(a);
-    const bGold = invoiceHasGold(b);
-    if (aGold !== bGold) return aGold ? 1 : -1;
+    const aDateRank = inspectionDateRank(a);
+    const bDateRank = inspectionDateRank(b);
+    if (aDateRank !== bDateRank) return aDateRank - bDateRank;
+    if (aDateRank > 0) {
+      const dateCompare = String(a.receiptDate || "").localeCompare(String(b.receiptDate || ""));
+      if (dateCompare !== 0) return dateCompare;
+    }
     return (
       invoiceSessionRank(a) - invoiceSessionRank(b) ||
       visibleInvoiceSequenceNo(a, 999999) - visibleInvoiceSequenceNo(b, 999999) ||
