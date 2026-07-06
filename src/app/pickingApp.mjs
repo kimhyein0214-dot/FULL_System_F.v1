@@ -553,8 +553,7 @@ function workOrderedInvoices() {
 }
 
 function frontOrderedInvoicesForExport() {
-  const grouped = (state.groups || []).flat();
-  return grouped.length ? grouped : workOrderedInvoices();
+  return exportOrderedInvoices(state.viewModel?.invoices || []);
 }
 
 function workflowOrderedInvoices() {
@@ -629,20 +628,20 @@ const EXPORT_ROUTE_ORDER = [
   "PL",
   "PI",
   "PJ",
-  "EF",
+  "EA",
+  "ED",
+  "EC",
+  "EB",
   "EE",
+  "EF",
+  "BA",
+  "NA",
   "SA",
   "RA",
-  "NA",
-  "BA",
-  "HD",
-  "HC",
-  "HB",
   "HA",
-  "EC",
-  "ED",
-  "EB",
-  "EA",
+  "HB",
+  "HC",
+  "HD",
 ];
 const EXPORT_ROUTE_RANK = EXPORT_ROUTE_ORDER.reduce((map, code, index) => {
   map[code] = index;
@@ -826,8 +825,7 @@ function sortPickingRows(rows) {
     const bGold = invoiceHasGold(b.invoice);
     if (String(a.invoice.orderGroupNo || "") === String(b.invoice.orderGroupNo || "")) {
       return (
-        (aItem.itemOrderIndex ?? 999999) - (bItem.itemOrderIndex ?? 999999) ||
-        (aItem.sortOrder ?? 999999) - (bItem.sortOrder ?? 999999) ||
+        compareInvoiceItemsBySellpiaRow(aItem, bItem) ||
         String(aItem.sellpiaItemNo || "").localeCompare(String(bItem.sellpiaItemNo || ""), "ko", { numeric: true })
       );
     }
@@ -835,7 +833,7 @@ function sortPickingRows(rows) {
       return (
         (a.invoice.sortOrder ?? 999999) - (b.invoice.sortOrder ?? 999999) ||
         String(a.invoice.orderGroupNo).localeCompare(String(b.invoice.orderGroupNo), "ko") ||
-        (aItem.itemOrderIndex ?? 999999) - (bItem.itemOrderIndex ?? 999999)
+        compareInvoiceItemsBySellpiaRow(aItem, bItem)
       );
     }
     if (aGold !== bGold) {
@@ -845,9 +843,9 @@ function sortPickingRows(rows) {
       );
     }
     return (
-      (aItem.sortOrder ?? 999999) - (bItem.sortOrder ?? 999999) ||
-      String(aItem.ownCode || "").localeCompare(String(bItem.ownCode || ""), "ko", { numeric: true }) ||
-      (aItem.itemOrderIndex ?? 999999) - (bItem.itemOrderIndex ?? 999999) ||
+      compareExportRouteCode(aItem.ownCode || aItem.sellpiaProductCode, bItem.ownCode || bItem.sellpiaProductCode) ||
+      visibleInvoiceSequenceNo(a.invoice, 999999) - visibleInvoiceSequenceNo(b.invoice, 999999) ||
+      compareInvoiceItemsBySellpiaRow(aItem, bItem) ||
       (a.invoice.sortOrder ?? 999999) - (b.invoice.sortOrder ?? 999999) ||
       String(a.invoice.orderGroupNo).localeCompare(String(b.invoice.orderGroupNo), "ko")
     );
@@ -910,7 +908,7 @@ function currentVisibleInvoices() {
 function currentPickingRows() {
   return sortPickingRows(
     currentVisibleInvoices().flatMap((invoice, invoiceIndex) =>
-      (invoice.items || []).map((item, itemIndex) => ({ invoice, item, invoiceIndex, itemIndex })),
+      invoiceItemsInSellpiaRowOrder(invoice).map((item, itemIndex) => ({ invoice, item, invoiceIndex, itemIndex })),
     ),
   );
 }
@@ -923,12 +921,33 @@ function itemSlotKey(invoice, item) {
   return `${invoice.orderGroupNo}::${item.sellpiaItemNo}`;
 }
 
+function itemSortRank(item) {
+  const sortOrder = Number(item?.sortOrder);
+  if (Number.isFinite(sortOrder) && sortOrder > 0) return sortOrder;
+  const itemOrder = Number(item?.itemOrderIndex);
+  if (Number.isFinite(itemOrder) && itemOrder > 0) return itemOrder;
+  return 999999;
+}
+
+function compareInvoiceItemsBySellpiaRow(a, b) {
+  return (
+    itemSortRank(a) - itemSortRank(b) ||
+    String(a?.sellpiaItemNo || "").localeCompare(String(b?.sellpiaItemNo || ""), "ko", { numeric: true }) ||
+    String(a?.ownCode || "").localeCompare(String(b?.ownCode || ""), "ko", { numeric: true })
+  );
+}
+
+function invoiceItemsInSellpiaRowOrder(invoice) {
+  return [...(invoice?.items || [])].sort(compareInvoiceItemsBySellpiaRow);
+}
+
 function itemOrderNo(item, fallbackIndex = 0) {
-  return Number(item?.itemOrderIndex || 0) || fallbackIndex + 1;
+  void item;
+  return fallbackIndex + 1;
 }
 
 function invoiceItemIndex(invoice, item) {
-  const index = (invoice?.items || []).findIndex((row) => row.sellpiaItemNo === item?.sellpiaItemNo);
+  const index = invoiceItemsInSellpiaRowOrder(invoice).findIndex((row) => row.sellpiaItemNo === item?.sellpiaItemNo);
   return index >= 0 ? index : 0;
 }
 
@@ -1037,8 +1056,7 @@ function invoiceSequenceWithGroupLabel(invoice, fallbackIndex = 0) {
 }
 
 function itemSequenceNo(item, fallbackIndex = 0) {
-  const explicit = Number(item?.itemOrderIndex || 0);
-  if (explicit) return explicit;
+  void item;
   return fallbackIndex + 1;
 }
 
@@ -1545,7 +1563,7 @@ function orderListModalRows() {
   return sortedAllInvoices().flatMap((invoice, invoiceIndex) => {
     const invoiceItemCount = (invoice.items || []).length;
     const invoiceQty = (invoice.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
-    return (invoice.items || []).flatMap((item) => {
+    return invoiceItemsInSellpiaRowOrder(invoice).flatMap((item) => {
       const done = isPicked(item);
       const shortage = shortageQty(item);
       if (filter === "unpick" && done) return [];
@@ -1692,7 +1710,7 @@ function renderTray() {
   if (!els.trayBoard) return;
   const invoices = currentTrayInvoices();
   const rows = invoices.flatMap((invoice, invoiceIndex) =>
-    (invoice.items || []).map((item) => ({ invoice, item, invoiceIndex })),
+    invoiceItemsInSellpiaRowOrder(invoice).map((item) => ({ invoice, item, invoiceIndex })),
   );
   const done = rows.filter(({ item }) => isPicked(item)).length;
   const groupLabel =
@@ -1978,12 +1996,7 @@ function isGoldGroupedPickingView(invoices = currentVisibleInvoices()) {
 }
 
 function sortedInvoiceItemsForPicking(invoice) {
-  return [...(invoice.items || [])].sort(
-    (a, b) =>
-      (itemOrderNo(a, 999998) || 999999) - (itemOrderNo(b, 999998) || 999999) ||
-      (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
-      String(a.sellpiaItemNo || "").localeCompare(String(b.sellpiaItemNo || ""), "ko", { numeric: true }),
-  );
+  return invoiceItemsInSellpiaRowOrder(invoice);
 }
 
 function renderGoldInvoiceCard(invoice, invoiceIndex = 0) {
@@ -2310,7 +2323,7 @@ function renderShortageRows(rows) {
 
 function renderShortageInvoiceItems(invoice) {
   return `<div class="workflow-item-table shortage-invoice-table">
-    ${(invoice.items || [])
+    ${invoiceItemsInSellpiaRowOrder(invoice)
       .map((item, index) => {
         const itemState = workflowItemState(invoice, item);
         const imageUrl = productImageUrl(item.sellpiaProductCode);
@@ -2573,7 +2586,7 @@ function renderInspectionPanels(options = {}) {
     </div>
     <div class="workflow-item-table inspection-item-table ${selectedLabelTarget ? "has-label-number" : ""}">
       ${renderInspectionItemHeader(selectedLabelTarget)}
-      ${(selected.items || [])
+      ${invoiceItemsInSellpiaRowOrder(selected)
         .map((item, index) => {
           const itemState = workflowItemState(selected, item);
           const itemRepicked = Boolean(itemState?.shortageRepicked && !itemState?.cancelled);
@@ -2956,7 +2969,7 @@ function renderCompletedPanels() {
       </div>
     </div>
     <div class="workflow-item-table">
-      ${(selected.items || [])
+      ${invoiceItemsInSellpiaRowOrder(selected)
         .map((item, index) => {
           const itemState = workflowItemState(selected, item);
           const rowClass = itemState?.shortageRepicked ? "repicked" : "";
@@ -3699,7 +3712,7 @@ function buildToggleCsvRows() {
   ];
   const rows = [headers];
   frontOrderedInvoicesForExport().forEach((invoice) => {
-    (invoice.items || []).forEach((item) => {
+    invoiceItemsInSellpiaRowOrder(invoice).forEach((item) => {
       rows.push([
         invoice.orderGroupNo || "",
         invoice.receiptDate || "",
@@ -4070,7 +4083,7 @@ function compareLabelItems(invoice, shortageRankMap) {
       if (aRank.time !== bRank.time) return aRank.time - bRank.time;
       if (aRank.index !== bRank.index) return aRank.index - bRank.index;
     }
-    return (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) || itemSequenceNo(a, 999999) - itemSequenceNo(b, 999999);
+    return compareInvoiceItemsBySellpiaRow(a, b);
   };
 }
 
@@ -4121,8 +4134,7 @@ function labelSourceInvoices(shortageRankMap = new Map()) {
 }
 
 function labelItemsForInvoice(invoice, shortageRankMap) {
-  void shortageRankMap;
-  return [...(invoice.items || [])];
+  return [...(invoice.items || [])].sort(compareLabelItems(invoice, shortageRankMap));
 }
 
 function buildGoldLabelSourceRows(shortageRankMap = new Map()) {
