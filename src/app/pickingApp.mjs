@@ -966,6 +966,13 @@ function workflowItemState(invoice, item) {
   return state.workflowQueues?.workflowState?.itemStateByKey?.get(workflowItemKey(invoice, item)) || null;
 }
 
+function workflowAwareShortageQty(itemState, item) {
+  if (itemState && itemState.shortageQty !== null && itemState.shortageQty !== undefined) {
+    return Number(itemState.shortageQty) || 0;
+  }
+  return shortageQty(item);
+}
+
 function workflowInvoiceState(invoice) {
   return state.workflowQueues?.workflowState?.invoiceStateByKey?.get(invoice.orderGroupNo) || null;
 }
@@ -1357,7 +1364,7 @@ function dashboardDayStatsMap(invoices = dashboardSourceInvoices()) {
     if (invoiceHasRepickedShortage(invoice)) stats.repickedInvoices += 1;
     stats.shortageItems += itemRows.filter((item) => {
       const itemState = workflowItemState(invoice, item);
-      return Number(itemState?.shortageQty || shortageQty(item) || 0) > 0;
+      return workflowAwareShortageQty(itemState, item) > 0;
     }).length;
   });
 
@@ -2521,7 +2528,7 @@ function renderInspectionPanels(options = {}) {
           const option = cleanOptionName(item.optionName, item.ownCode) || "-";
           const product = item.productName || "-";
           const labelNo = labelNoByItem.get(itemSlotKey(selected, item)) || "-";
-          const shortage = Number(itemState?.shortageQty || shortageQty(item) || 0);
+          const shortage = workflowAwareShortageQty(itemState, item);
           const statusText = selectedCompleted ? "검품완료" : itemRepicked ? "미송피킹 완료" : "전체상품";
           const statusNotes = [itemState?.drawerMemo ? `서랍 ${itemState.drawerMemo}` : "", itemState?.memo ? itemState.memo : ""].filter(Boolean);
           const sellpiaOrderMemo = itemSellpiaOrderMemo(selected, item);
@@ -2668,7 +2675,7 @@ function allCsRows() {
     let invoiceRowCount = 0;
     for (const item of invoice.items || []) {
       const itemState = workflowItemState(invoice, item);
-      const qty = Number(itemState?.shortageQty || shortageQty(item) || 0);
+      const qty = workflowAwareShortageQty(itemState, item);
       const started = csShortageStartEvent(invoice, item);
       if (!started && qty <= 0 && !itemState?.shortageRepicked) continue;
       const date = dateKey(invoice.receiptDate);
