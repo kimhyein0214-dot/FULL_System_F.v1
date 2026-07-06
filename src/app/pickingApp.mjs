@@ -802,6 +802,13 @@ function sortPickingRows(rows) {
     const bItem = b.item;
     const aGold = invoiceHasGold(a.invoice);
     const bGold = invoiceHasGold(b.invoice);
+    if (String(a.invoice.orderGroupNo || "") === String(b.invoice.orderGroupNo || "")) {
+      return (
+        (aItem.itemOrderIndex ?? 999999) - (bItem.itemOrderIndex ?? 999999) ||
+        (aItem.sortOrder ?? 999999) - (bItem.sortOrder ?? 999999) ||
+        String(aItem.sellpiaItemNo || "").localeCompare(String(bItem.sellpiaItemNo || ""), "ko", { numeric: true })
+      );
+    }
     if (aGold && bGold) {
       return (
         (a.invoice.sortOrder ?? 999999) - (b.invoice.sortOrder ?? 999999) ||
