@@ -1012,9 +1012,10 @@ function formatAmount(value) {
   return Number.isFinite(number) ? number.toLocaleString("ko-KR") : "-";
 }
 
-function renderInspectionItemHeader() {
+function renderInspectionItemHeader(includeLabelNo = false) {
   return `<div class="workflow-item-row workflow-item-header">
     <span>상품순서번호</span>
+    ${includeLabelNo ? "<span>라벨번호</span>" : ""}
     <span>사진</span>
     <span>옵션명</span>
     <span>수량</span>
@@ -1027,6 +1028,30 @@ function renderInspectionItemHeader() {
     <span>상품 확인메모</span>
     <span>상태</span>
   </div>`;
+}
+
+function inspectionLabelNumberMap(selectedInvoice) {
+  if (!selectedInvoice || !invoiceHasGold(selectedInvoice)) return new Map();
+  const selectedKey = selectedInvoice.orderGroupNo || selectedInvoice.invoiceNo;
+  const map = new Map();
+  const weekdaySeq = {};
+  labelSourceInvoices(new Map()).forEach((invoice) => {
+    (labelItemsForInvoice(invoice, new Map()) || []).forEach((item) => {
+      const target = getLabelTargetResult({ privateCode: item.ownCode || "" }, null);
+      const optionName = normalizeLabelOptionName(item.optionName || "");
+      if (!target.ok || !optionName) return;
+      const qty = Math.max(1, parseInt(String(item.quantity || 1).replace(/,/g, ""), 10) || 1);
+      const weekday = getLabelWeekday(labelReceivedAtForItem(invoice, item));
+      const numbers = [];
+      for (let index = 0; index < qty; index += 1) {
+        weekdaySeq[weekday] = (weekdaySeq[weekday] || 0) + 1;
+        numbers.push(`${weekday}${weekdaySeq[weekday]}`);
+      }
+      if ((invoice.orderGroupNo || invoice.invoiceNo) !== selectedKey) return;
+      map.set(itemSlotKey(invoice, item), numbers.join(", "));
+    });
+  });
+  return map;
 }
 
 function formatShortDate(value) {
@@ -2437,6 +2462,8 @@ function renderInspectionPanels(options = {}) {
     return itemState?.shortageRepicked && !itemState?.inspected && !itemState?.cancelled;
   }).length;
   const selectedIndex = invoices.findIndex((invoice) => invoice.orderGroupNo === selected.orderGroupNo);
+  const selectedGold = invoiceHasGold(selected);
+  const labelNoByItem = selectedGold ? inspectionLabelNumberMap(selected) : new Map();
   const selectedOrderTotal = formatAmount(selected.orderTotalAmount);
   const selectedHeaderMeta = [
     selected.displayName || selected.csDisplayName || "-",
@@ -2462,13 +2489,13 @@ function renderInspectionPanels(options = {}) {
         <button class="btn" data-action="${holdAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>${holdLabel}</button>
         <button class="btn primary" data-action="${completeAction}" data-inspection-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${completeDisabled} ${completeTitle}>${completeLabel}</button>
         ${selectedCompleted ? '<span class="workflow-row-badge done">완료</span>' : ""}
-        ${invoiceHasGold(selected) ? '<span class="workflow-row-badge gold">골드</span>' : ""}
+        ${selectedGold ? '<span class="workflow-row-badge gold">골드</span>' : ""}
         ${selectedRepicked ? `<span class="workflow-row-badge warn">미송 ${selectedRepicked}</span>` : ""}
         ${invoiceState?.hold ? '<span class="workflow-row-badge hold">보류</span>' : ""}
       </div>
     </div>
-    <div class="workflow-item-table inspection-item-table">
-      ${renderInspectionItemHeader()}
+    <div class="workflow-item-table inspection-item-table ${selectedGold ? "has-label-number" : ""}">
+      ${renderInspectionItemHeader(selectedGold)}
       ${(selected.items || [])
         .map((item, index) => {
           const itemState = workflowItemState(selected, item);
@@ -2477,6 +2504,7 @@ function renderInspectionPanels(options = {}) {
           const imageUrl = productImageUrl(item.sellpiaProductCode);
           const option = cleanOptionName(item.optionName, item.ownCode) || "-";
           const product = item.productName || "-";
+          const labelNo = labelNoByItem.get(itemSlotKey(selected, item)) || "-";
           const shortage = Number(itemState?.shortageQty || shortageQty(item) || 0);
           const statusText = selectedCompleted ? "검품완료" : itemRepicked ? "미송피킹 완료" : "전체상품";
           const statusNotes = [itemState?.drawerMemo ? `서랍 ${itemState.drawerMemo}` : "", itemState?.memo ? itemState.memo : ""].filter(Boolean);
@@ -2490,6 +2518,7 @@ function renderInspectionPanels(options = {}) {
               : "";
           return `<div class="workflow-item-row ${rowClass}">
             <span class="workflow-seq-cell">${itemSequenceNo(item, index)}</span>
+            ${selectedGold ? `<span class="workflow-label-cell">${escapeHtml(labelNo)}</span>` : ""}
             <div class="workflow-item-photo">${imageUrl ? `<img src="${imageUrl}" ${photoImgAttrs(imageUrl, photoTitleForItem(item))} alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "사진"}</div>
             <em class="${optionClass(item, "workflow-option-cell")}">${escapeHtml(option)}</em>
             <b>${Number(item.quantity) || 1}</b>

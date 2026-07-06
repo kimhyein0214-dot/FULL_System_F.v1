@@ -2046,6 +2046,11 @@ input {
   padding: 10px 12px;
 }
 
+.inspection-item-table.has-label-number .workflow-item-row {
+  min-width: 1970px;
+  grid-template-columns: 52px 82px 168px 380px 50px 260px 84px 148px 92px 74px 180px 180px 96px;
+}
+
 .inspection-item-table .workflow-item-header {
   position: sticky;
   top: 0;
