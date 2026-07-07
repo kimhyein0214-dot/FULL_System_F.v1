@@ -159,6 +159,12 @@ input {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 
+.workflow-actions-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .date-input {
   height: 38px;
   width: 152px;

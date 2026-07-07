@@ -1302,8 +1302,10 @@ function isInspectionVisibleBaseInvoice(invoice) {
 function inspectionSourceInvoices() {
   const pickingReadyInvoices = (state.viewModel?.invoices || []).filter(invoiceReadyFromPicking);
   const shortageInvoices = mergeInvoicesUnique(state.workflowQueues?.viewModel?.invoices || [], state.viewModel?.invoices || []).filter(invoiceHasRepickedShortage);
+  const latestScrapeInvoices = state.workflowQueues?.viewModel?.invoices || [];
   return sortInspectionInvoices(
     mergeInvoicesUnique(
+      latestScrapeInvoices,
       pickingReadyInvoices,
       shortageInvoices,
       state.workflowQueues?.inspectionInvoices || [],
@@ -2515,7 +2517,7 @@ function renderShortagePanels() {
             <span>관리메모2</span>
             <textarea data-shortage-field="memo" rows="2" placeholder="상품별 미송 메모">${escapeHtml(selectedState?.memo || selected.item.sellpiaMemo2 || "")}</textarea>
           </label>
-          ${selectedCompleted ? '<small class="workflow-help-text">기존 완료 기록입니다. 새 작업에서는 피킹완료 처리를 사용하지 않습니다.</small>' : `<button class="btn" data-action="shortage-memo-save" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>메모 저장</button>`}
+          ${selectedCompleted ? '<small class="workflow-help-text">기존 완료 기록입니다. 미송피킹 대기 목록에는 표시되지 않습니다.</small>' : `<div class="workflow-actions-row"><button class="btn" data-action="shortage-memo-save" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>메모 저장</button><button class="btn primary" data-action="shortage-repicked" data-shortage-key="${escapeHtml(selectedKey)}" type="button" ${repickDisabled}>미송피킹완료</button></div>`}
         </div>
       </div>
     </div>
@@ -4466,20 +4468,25 @@ async function completeSelectedShortagePicking(shortageKey = state.selectedShort
     return;
   }
 
-  toast("미송피킹 완료처리는 사용하지 않습니다. 필요한 내용은 메모 저장으로 남겨주세요.");
-  return;
-
   const ok = await saveWorkflowItemEvent(row.invoice, row.item, "shortage_repick_completed", {
     quantity: 0,
     memo: "shortage repicked",
     drawerMemo: row.state?.drawerMemo || row.item.pickingState?.drawerMemo || row.invoice.sellpiaMemo1 || null,
   });
   if (!ok) return;
+  row.item.sellpiaMemo2 = "";
+  if (row.item.raw) {
+    row.item.raw.o_shop_memo2 = "";
+    row.item.raw.shop_memo2 = "";
+    row.item.raw.memo2 = "";
+  }
+  const { error } = await db.from("order_items").update({ o_shop_memo2: "" }).eq("ord_no", row.invoice.orderGroupNo).eq("item_no", row.item.sellpiaItemNo);
+  if (error) throw error;
 
   state.selectedInspectionGroup = row.invoice.orderGroupNo;
   state.selectedShortageKey = "";
   renderWorkflowSurfaces();
-  toast("미송피킹 완료: 검품탭에 송장 전체가 표시됩니다.");
+  toast("미송피킹 완료: 관리메모2를 비우고 검품탭에 송장 전체가 표시됩니다.");
 }
 
 function findWorkflowInvoiceItem(orderGroupNo, sellpiaItemNo) {
@@ -4555,8 +4562,14 @@ async function saveSelectedShortageMemo(shortageKey = state.selectedShortageKey)
   });
   if (!ok) return;
   row.item.sellpiaMemo1 = drawerMemo;
+  row.item.sellpiaMemo2 = memo;
   if (row.item.raw) row.item.raw.o_shop_memo = drawerMemo;
-  const { error } = await db.from("order_items").update({ o_shop_memo: drawerMemo }).eq("ord_no", row.invoice.orderGroupNo).eq("item_no", row.item.sellpiaItemNo);
+  if (row.item.raw) {
+    row.item.raw.o_shop_memo2 = memo;
+    row.item.raw.shop_memo2 = memo;
+    row.item.raw.memo2 = memo;
+  }
+  const { error } = await db.from("order_items").update({ o_shop_memo: drawerMemo, o_shop_memo2: memo }).eq("ord_no", row.invoice.orderGroupNo).eq("item_no", row.item.sellpiaItemNo);
   if (error) throw error;
   state.selectedShortageKey = shortageKey;
   renderWorkflowSurfaces();
