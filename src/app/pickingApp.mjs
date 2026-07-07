@@ -3936,6 +3936,63 @@ function alimtalkOption(item) {
   return itemSellerOptionName(item) || item.optionName || "";
 }
 
+function alimtalkBaseRow(row, item, extra = {}) {
+  const invoice = row.invoice;
+  const itemState = item ? workflowItemState(invoice, item) : null;
+  const date = dateKey(invoice.receiptDate);
+  return {
+    key: item ? csRowKey(invoice, item) : row.key,
+    invoice,
+    item,
+    state: itemState,
+    shortageQty: item ? workflowAwareShortageQty(itemState, item) || previousShortageQuantity(invoice, item) || 1 : 0,
+    currentShortageQty: item ? workflowAwareShortageQty(itemState, item) : 0,
+    shortageDate: date,
+    elapsedDays: daysSinceDateKey(date),
+    csMethod: item ? csMethodText(invoice, item) : "",
+    ...extra,
+  };
+}
+
+function buildAlimtalkRowsFromCsInvoices(csRows) {
+  const rows = [];
+  for (const row of csRows || []) {
+    const invoice = row.invoice;
+    const invoiceState = workflowInvoiceState(invoice);
+    const delayedItems = invoiceItemsInSellpiaRowOrder(invoice).filter((item) => {
+      const itemState = workflowItemState(invoice, item);
+      if (itemState?.inspected || itemState?.cancelled || itemState?.shortageRepicked) return false;
+      return itemHasOpenWorkflowShortage(invoice, item) || isHold(item);
+    });
+    if (delayedItems.length) {
+      delayedItems.forEach((item) => {
+        const itemState = workflowItemState(invoice, item);
+        rows.push(
+          alimtalkBaseRow(row, item, {
+            currentShortageQty: workflowAwareShortageQty(itemState, item),
+            csReason: isHold(item) || invoiceState?.hold || invoiceState?.csPending ? "hold" : "shortage",
+          }),
+        );
+      });
+      continue;
+    }
+    if (invoiceState?.hold || invoiceState?.csPending) {
+      const item = invoiceItemsInSellpiaRowOrder(invoice)[0] || null;
+      if (item) rows.push(alimtalkBaseRow(row, item, { key: `${row.key}::hold`, csReason: "hold", currentShortageQty: 0, shortageQty: 0 }));
+      continue;
+    }
+    if (invoiceReadyFromPicking(invoice)) {
+      const item = invoiceItemsInSellpiaRowOrder(invoice)[0] || null;
+      rows.push(alimtalkBaseRow(row, item, { key: row.key, csReason: "ready", currentShortageQty: 0, shortageQty: 0 }));
+    }
+  }
+  return rows;
+}
+
+function classifyAlimtalkRowsByDay(rows) {
+  return classifyCsRowsByDay(rows);
+}
+
 function alimtalkRowsForDay(dayKey, rows) {
   const header = dayKey === "내일출고" ? ["전화번호", "#{NAME}"] : ["전화번호", "#{NAME}", "#{PRODUCT}", "#{OPTION}"];
   const body = rows.map((row) =>
@@ -3947,12 +4004,12 @@ function alimtalkRowsForDay(dayKey, rows) {
 }
 
 function exportAlimtalkCsv() {
-  const allRows = allCsRows();
+  const allRows = buildAlimtalkRowsFromCsInvoices(allCsRows());
   if (!allRows.length) {
     toast("알림톡 CSV 대상이 없습니다.");
     return;
   }
-  const byDay = classifyCsRowsByDay(allRows);
+  const byDay = classifyAlimtalkRowsByDay(allRows);
   const timestamp = timestampForFilename();
   let fileCount = 0;
   let rowCount = 0;
