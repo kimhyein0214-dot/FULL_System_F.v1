@@ -1099,6 +1099,50 @@ function formatAmount(value) {
   return Number.isFinite(number) ? number.toLocaleString("ko-KR") : "-";
 }
 
+function parseAmountNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const normalized = String(value).replace(/[^0-9.-]/g, "");
+  if (!/\d/.test(normalized)) return null;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+}
+
+function getInvoiceTotalAmount(invoice) {
+  const candidates = [
+    invoice?.orderTotalAmount,
+    invoice?.order_amount,
+    invoice?.order_price,
+    invoice?.total_amount,
+    invoice?.total_price,
+    invoice?.pay_amount,
+    invoice?.settle_price,
+    invoice?.o_total_price,
+    invoice?.order_total,
+    invoice?.raw?.sellpia_order_total_amount,
+    invoice?.raw?.order_total_amount,
+    invoice?.raw?.order_amount,
+    invoice?.raw?.order_price,
+    invoice?.raw?.total_amount,
+    invoice?.raw?.total_price,
+    invoice?.raw?.pay_amount,
+    invoice?.raw?.settle_price,
+    invoice?.raw?.o_total_price,
+    invoice?.raw?.order_total,
+  ];
+  for (const value of candidates) {
+    const amount = parseAmountNumber(value);
+    if (amount !== null) return amount;
+  }
+  return null;
+}
+
+function renderInspectionTotalAmountBadge(invoice) {
+  const totalAmount = getInvoiceTotalAmount(invoice);
+  if (totalAmount === null) return "";
+  return `<span class="invoice-badge" aria-label="총 주문금액">총금액 ${escapeHtml(formatAmount(totalAmount))}원</span>
+    ${totalAmount >= 20000 ? '<span class="workflow-row-badge warn">사은품확인!</span>' : ""}`;
+}
+
 function renderInspectionItemHeader(includeLabelNo = false) {
   return `<div class="workflow-item-row workflow-item-header">
     <span>상품순서번호</span>
@@ -2634,11 +2678,9 @@ function renderInspectionPanels(options = {}) {
   const selectedGold = invoiceHasGold(selected);
   const selectedLabelTarget = invoiceHasLabelTarget(selected);
   const labelNoByItem = selectedLabelTarget ? inspectionLabelNumberMap(selected) : new Map();
-  const selectedOrderTotal = formatAmount(selected.orderTotalAmount);
   const selectedHeaderMeta = [
     selected.displayName || selected.csDisplayName || "-",
     `접수 ${selected.receiptDate || "-"}`,
-    `총 주문금액 ${selectedOrderTotal === "-" ? "-" : `${selectedOrderTotal}원`}`,
   ].join(" · ");
   const completeAction = selectedCompleted ? "inspection-reopen" : "inspection-complete";
   const completeLabel = selectedCompleted ? "완료 취소" : "완료 처리";
@@ -2649,9 +2691,10 @@ function renderInspectionPanels(options = {}) {
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
         <span>${escapeHtml(selectedHeaderMeta)}</span>
-        <label class="inspection-drawer-box">
+        <label class="inspection-drawer-box" style="flex-wrap: wrap;">
           <span>서랍번호</span>
           <textarea class="drawer-input inspection-drawer-input" data-inspection-drawer data-order-group="${escapeHtml(selected.orderGroupNo)}" rows="2" placeholder="서랍번호 / 메모">${escapeHtml(invoiceDrawerValue(selected))}</textarea>
+          ${renderInspectionTotalAmountBadge(selected)}
         </label>
       </div>
       <div class="inspection-actions">
