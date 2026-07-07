@@ -1143,13 +1143,18 @@ function renderInspectionTotalAmountBadge(invoice) {
     ${totalAmount >= 20000 ? '<span class="workflow-row-badge warn">사은품확인!</span>' : ""}`;
 }
 
-function renderInspectionItemHeader(includeLabelNo = false) {
+function invoiceTotalQuantity(invoice) {
+  return (invoice?.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+}
+
+function renderInspectionItemHeader(includeLabelNo = false, totalQty = null) {
+  const totalQtyLabel = Number.isFinite(totalQty) ? ` (총 ${totalQty.toLocaleString("ko-KR")}개)` : "";
   return `<div class="workflow-item-row workflow-item-header">
     <span>상품순서번호</span>
     ${includeLabelNo ? "<span>라벨번호</span>" : ""}
     <span>사진</span>
     <span>옵션명</span>
-    <span>수량</span>
+    <span>수량${totalQtyLabel}</span>
     <span>상품명</span>
     <span>금액</span>
     <span>자사코드</span>
@@ -2678,6 +2683,7 @@ function renderInspectionPanels(options = {}) {
   const selectedGold = invoiceHasGold(selected);
   const selectedLabelTarget = invoiceHasLabelTarget(selected);
   const labelNoByItem = selectedLabelTarget ? inspectionLabelNumberMap(selected) : new Map();
+  const selectedTotalQty = invoiceTotalQuantity(selected);
   const selectedHeaderMeta = [
     selected.displayName || selected.csDisplayName || "-",
     `접수 ${selected.receiptDate || "-"}`,
@@ -2708,7 +2714,7 @@ function renderInspectionPanels(options = {}) {
       </div>
     </div>
     <div class="workflow-item-table inspection-item-table ${selectedLabelTarget ? "has-label-number" : ""}">
-      ${renderInspectionItemHeader(selectedLabelTarget)}
+      ${renderInspectionItemHeader(selectedLabelTarget, selectedTotalQty)}
       ${invoiceItemsInSellpiaRowOrder(selected)
         .map((item, index) => {
           const itemState = workflowItemState(selected, item);
