@@ -4088,6 +4088,216 @@ function exportToggleCsv() {
   toast(`토글 CSV ${rows.length - 1}행 다운로드`);
 }
 
+async function exportDbMemoHoldSnapshotCsv() {
+  try {
+    toast("DB 메모/보류 상태 조회 중...");
+    const ordersData = await fetchAllRows(() => {
+      let query = db.from("orders").select("*").eq("receipt_date", state.selectedDate);
+      if (state.session !== "ALL") query = query.eq("am_pm", state.session);
+      return query.order("sort_order", { ascending: true, nullsFirst: false });
+    });
+    const orderNos = [...new Set((ordersData || []).map((row) => String(row.ord_no || "").trim()).filter(Boolean))];
+    if (!orderNos.length) {
+      toast("DB 주문 없음");
+      return;
+    }
+
+    const itemRows = await dbMemoSnapshotFetchByOrderNos("order_items", orderNos);
+    const pickingRows = await dbMemoSnapshotFetchByOrderNos("picking", orderNos);
+    const shortageRows = await dbMemoSnapshotFetchByOrderNos("shortage", orderNos);
+    const rows = buildDbMemoHoldSnapshotRows(ordersData, itemRows, pickingRows, shortageRows);
+
+    downloadCsv(dbMemoHoldSnapshotFilename(), rows);
+    toast(`DB메모상태 CSV ${rows.length - 1}행 다운로드`);
+  } catch (error) {
+    console.error("[DB memo snapshot]", error);
+    toast(`DB메모상태 CSV 실패: ${error.message || error}`);
+  }
+}
+
+async function dbMemoSnapshotFetchByOrderNos(table, orderNos) {
+  const rows = [];
+  const unique = [...new Set((orderNos || []).map((value) => String(value || "").trim()).filter(Boolean))];
+  for (let index = 0; index < unique.length; index += 80) {
+    const batch = unique.slice(index, index + 80);
+    const part = await fetchAllRows(() => db.from(table).select("*").in("ord_no", batch));
+    rows.push(...(part || []));
+  }
+  return rows;
+}
+
+function dbMemoSnapshotItemKey(row) {
+  return String(row?.item_no || "").trim();
+}
+
+function dbMemoSnapshotSortKey(row) {
+  return String(row?.item_sort_order ?? row?.sort_order ?? "").trim();
+}
+
+function dbMemoSnapshotProductCode(row) {
+  return String(row?.p_code || row?.sellpia_p_code || "").trim();
+}
+
+function rowsByOrderNo(rows) {
+  const map = new Map();
+  (rows || []).forEach((row) => {
+    const orderNo = String(row.ord_no || "").trim();
+    if (!orderNo) return;
+    if (!map.has(orderNo)) map.set(orderNo, []);
+    map.get(orderNo).push(row);
+  });
+  return map;
+}
+
+function findDbMemoSnapshotMatch(item, candidates = []) {
+  const itemNo = dbMemoSnapshotItemKey(item);
+  if (itemNo) {
+    const hit = candidates.find((row) => dbMemoSnapshotItemKey(row) === itemNo);
+    if (hit) return hit;
+  }
+
+  const sortKey = dbMemoSnapshotSortKey(item);
+  if (sortKey) {
+    const hit = candidates.find((row) => dbMemoSnapshotSortKey(row) === sortKey);
+    if (hit) return hit;
+  }
+
+  const productCode = dbMemoSnapshotProductCode(item);
+  if (productCode) {
+    const hits = candidates.filter((row) => dbMemoSnapshotProductCode(row) === productCode);
+    if (hits.length === 1) return hits[0];
+  }
+
+  return null;
+}
+
+function dbMemoSnapshotFlag(value) {
+  const text = String(value ?? "").trim().toLowerCase();
+  return value === true || text === "true" || text === "y" || text === "1" || text === "on" ? "Y" : "";
+}
+
+function dbMemoSnapshotShortageStatus(value) {
+  return String(value || "").trim();
+}
+
+function dbMemoSnapshotHasShortageValue(row) {
+  if (!row) return false;
+  return Number(row.short_qty || row.shortage_qty || 0) > 0 || !!String(row.memo2_val || "").trim();
+}
+
+function dbMemoSnapshotDiagnosis(order, item, pickRow, shortageRow, pickRowsForOrder, shortageRowsForOrder) {
+  const status = dbMemoSnapshotShortageStatus(shortageRow?.status || "");
+  const anyDone = (shortageRowsForOrder || []).some((row) => {
+    const rowStatus = dbMemoSnapshotShortageStatus(row.status);
+    return rowStatus === "검품완료" || rowStatus === "메모정리완료";
+  });
+  const anyPicking = !!(pickRowsForOrder || []).length;
+  const hasShortageValue = dbMemoSnapshotHasShortageValue(shortageRow);
+
+  if (status === "검품완료" || status === "메모정리완료" || anyDone) {
+    return ["검품완료_CLEAR대상", "관리메모/관리메모2/주문메모 clear + 배송보류 OFF"];
+  }
+  if (status === "피킹완료") {
+    return ["미송피킹완료_검품전", "배송보류 ON 유지/설정, 메모 clear 금지"];
+  }
+  if (hasShortageValue) {
+    return ["미송반영값있음", "관리메모/관리메모2/배송보류 반영"];
+  }
+  if (anyPicking) {
+    return ["피킹근거있음_보류유지", "배송보류 ON 유지/설정"];
+  }
+  if (order && !anyPicking && !(shortageRowsForOrder || []).length) {
+    return ["orders만있음_확인전용", "LIVE write 제외"];
+  }
+  return ["확인필요", "CSV 확인"];
+}
+
+function buildDbMemoHoldSnapshotRows(ordersData, itemRows, pickingRows, shortageRows) {
+  const itemsByOrderNo = rowsByOrderNo(itemRows);
+  const pickingByOrderNo = rowsByOrderNo(pickingRows);
+  const shortageByOrderNo = rowsByOrderNo(shortageRows);
+  const rows = [
+    [
+      "조회일자",
+      "시간대",
+      "작업번호",
+      "송장번호",
+      "주문번호",
+      "주문품목No",
+      "상품코드",
+      "자사코드",
+      "상품명",
+      "옵션명",
+      "주문수량",
+      "orders.order_memo",
+      "orders.o_memo",
+      "order_items.order_memo",
+      "order_items.o_shop_memo",
+      "order_items.o_shop_memo2",
+      "picking.hold",
+      "picking.drawer_no",
+      "picking.memo",
+      "picking.shortage_qty",
+      "picking.is_checked",
+      "shortage.status",
+      "shortage.short_qty",
+      "shortage.memo2_val",
+      "shortage.drawer_no",
+      "진단상태",
+      "메모업데이터예상",
+    ],
+  ];
+
+  (ordersData || []).forEach((order, orderIndex) => {
+    const orderNo = String(order.ord_no || "").trim();
+    const items = itemsByOrderNo.get(orderNo) || [null];
+    const pickRowsForOrder = pickingByOrderNo.get(orderNo) || [];
+    const shortageRowsForOrder = shortageByOrderNo.get(orderNo) || [];
+
+    items.forEach((item) => {
+      const pickRow = item ? findDbMemoSnapshotMatch(item, pickRowsForOrder) : null;
+      const shortageRow = item ? findDbMemoSnapshotMatch(item, shortageRowsForOrder) : null;
+      const [diagnosis, expected] = dbMemoSnapshotDiagnosis(order, item, pickRow, shortageRow, pickRowsForOrder, shortageRowsForOrder);
+
+      rows.push([
+        state.selectedDate,
+        state.session,
+        order.print_seq_no || order.planned_print_seq_no || order.sort_order || orderIndex + 1,
+        order.inv_no || item?.inv_no || pickRow?.inv_no || shortageRow?.inv_no || "",
+        orderNo,
+        item?.item_no || "",
+        item?.p_code || pickRow?.p_code || shortageRow?.p_code || "",
+        item?.prod_code || "",
+        item?.p_name || item?.seller_product_name || "",
+        item?.p_option || item?.seller_option_name || "",
+        item?.qty || item?.o_amount || "",
+        order.order_memo || "",
+        order.o_memo || "",
+        item?.order_memo || "",
+        item?.o_shop_memo || "",
+        item?.o_shop_memo2 || "",
+        dbMemoSnapshotFlag(pickRow?.hold),
+        pickRow?.drawer_no || "",
+        pickRow?.memo || "",
+        pickRow?.shortage_qty ?? "",
+        dbMemoSnapshotFlag(pickRow?.is_checked),
+        shortageRow?.status || "",
+        shortageRow?.short_qty ?? shortageRow?.shortage_qty ?? "",
+        shortageRow?.memo2_val || "",
+        shortageRow?.drawer_no || "",
+        diagnosis,
+        expected,
+      ]);
+    });
+  });
+
+  return rows;
+}
+
+function dbMemoHoldSnapshotFilename() {
+  return `db_memo_hold_snapshot_${state.selectedDate.replace(/-/g, "")}_${state.session}_${timestampForFilename().slice(-4)}.csv`;
+}
+
 const LABEL_CSV_HEADER = ["라벨번호", "상품코드", "자사코드", "판매처 상품명", "판매처 옵션명", "수량", "접수일자", "수취인"];
 const LABEL_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -5486,6 +5696,9 @@ function bindEvents() {
     }
     if (button.dataset.dashboardAction === "planned-print-csv") {
       exportPlannedPrintCsv();
+    }
+    if (button.dataset.dashboardAction === "db-memo-snapshot") {
+      exportDbMemoHoldSnapshotCsv().catch(showError);
     }
     if (button.dataset.dashboardAction === "gold-label") {
       exportGoldLabelXlsx().catch(showError);
