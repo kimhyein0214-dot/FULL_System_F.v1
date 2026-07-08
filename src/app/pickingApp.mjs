@@ -4574,43 +4574,13 @@ function labelInvoiceRank(invoice, shortageRankMap) {
 }
 
 function labelSourceInvoices(shortageRankMap = new Map()) {
-  const selected = exportOrderedInvoices(state.viewModel?.invoices || [])
-    .filter((invoice) => (invoice.items || []).some((item) => isGoldItem(item) || isLabelTarget({ privateCode: item.ownCode || "" })))
-    .map((invoice) => ({ ...invoice, _labelSelectedDate: true }));
-  const selectedKeys = new Set(selected.map((invoice) => invoice.orderGroupNo || invoice.invoiceNo).filter(Boolean));
-  const extras = mergeInvoicesUnique(
-    state.workflowQueues?.inspectionInvoices || [],
-    state.workflowQueues?.inspectionCompletedInvoices || [],
-    state.workflowQueues?.viewModel?.invoices || [],
-  )
-    .filter((invoice) => {
-      const key = invoice.orderGroupNo || invoice.invoiceNo;
-      if (!key || selectedKeys.has(key)) return false;
-      return (invoice.items || []).some((item) => isGoldItem(item) || isLabelTarget({ privateCode: item.ownCode || "" }));
-    })
-    .sort(
-      (a, b) => {
-        const dateCompare = String(a.receiptDate || "").localeCompare(String(b.receiptDate || ""));
-        if (dateCompare !== 0) return dateCompare;
-        const aRank = labelInvoiceRank(a, shortageRankMap);
-        const bRank = labelInvoiceRank(b, shortageRankMap);
-        if (aRank || bRank) {
-          if (!aRank) return 1;
-          if (!bRank) return -1;
-          if (aRank.time !== bRank.time) return aRank.time - bRank.time;
-          if (aRank.index !== bRank.index) return aRank.index - bRank.index;
-        }
-        return (
-          (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) ||
-          String(a.orderGroupNo || "").localeCompare(String(b.orderGroupNo || ""), "ko", { numeric: true })
-        );
-      },
-    );
-  return [...selected, ...extras];
+  void shortageRankMap;
+  return completedInvoicesForSelectedDate().filter(invoiceHasLabelTarget);
 }
 
 function labelItemsForInvoice(invoice, shortageRankMap) {
-  return [...(invoice.items || [])].sort(compareLabelItems(invoice, shortageRankMap));
+  void shortageRankMap;
+  return invoiceItemsInSellpiaRowOrder(invoice);
 }
 
 function buildGoldLabelSourceRows(shortageRankMap = new Map()) {
