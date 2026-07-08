@@ -4109,12 +4109,13 @@ function classifyAlimtalkRowsByDay(rows) {
 }
 
 function alimtalkRowsForDay(dayKey, rows) {
+  const debugSpacer = ["", "", ""];
   const debugHeader = ["판매처", "접수일", "검품완료여부", "미송상품"];
-  const header = (dayKey === "내일출고" ? ["전화번호", "#{NAME}"] : ["전화번호", "#{NAME}", "#{PRODUCT}", "#{OPTION}"]).concat(debugHeader);
+  const header = (dayKey === "내일출고" ? ["전화번호", "#{NAME}"] : ["전화번호", "#{NAME}", "#{PRODUCT}", "#{OPTION}"]).concat(debugSpacer, debugHeader);
   const body = rows.map((row) =>
     dayKey === "내일출고"
-      ? [alimtalkPhone(row.invoice), alimtalkName(row.invoice), ...alimtalkDebugColumns(row)]
-      : [alimtalkPhone(row.invoice), alimtalkName(row.invoice), alimtalkProduct(row.item), alimtalkOption(row.item), ...alimtalkDebugColumns(row)],
+      ? [alimtalkPhone(row.invoice), alimtalkName(row.invoice), ...debugSpacer, ...alimtalkDebugColumns(row)]
+      : [alimtalkPhone(row.invoice), alimtalkName(row.invoice), alimtalkProduct(row.item), alimtalkOption(row.item), ...debugSpacer, ...alimtalkDebugColumns(row)],
   );
   return [header, ...body];
 }
