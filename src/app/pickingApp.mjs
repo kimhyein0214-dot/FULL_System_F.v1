@@ -4383,7 +4383,11 @@ function formatCsvTextCell(value) {
 
 function normalizeLabelOptionName(optionName) {
   let value = String(optionName || "").trim();
-  if (value.includes(",")) value = value.split(",")[0];
+  if (value.includes(",")) {
+    value = value.split(",")[0];
+  } else if (/옵션\s*설명\s*참고|설명\s*참고/.test(value) && value.includes(":")) {
+    value = value.split(":").pop();
+  }
   if (value.includes("[")) value = value.split("[")[0];
   return value.trim();
 }
