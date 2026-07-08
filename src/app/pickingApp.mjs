@@ -3764,9 +3764,11 @@ function csvCell(value) {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function downloadCsv(filename, rows) {
-  const csv = (rows || []).map((row) => row.map(csvCell).join(",")).join("\r\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+function csvRowsToText(rows) {
+  return `\uFEFF${(rows || []).map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
+}
+
+function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -3777,10 +3779,105 @@ function downloadCsv(filename, rows) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function downloadCsv(filename, rows) {
+  downloadBlob(filename, new Blob([csvRowsToText(rows)], { type: "text/csv;charset=utf-8;" }));
+}
+
+function zipCrc32(bytes) {
+  if (!zipCrc32.table) {
+    zipCrc32.table = Array.from({ length: 256 }, (_, index) => {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      return value >>> 0;
+    });
+  }
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = zipCrc32.table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function zipHeader(size) {
+  const bytes = new Uint8Array(size);
+  const view = new DataView(bytes.buffer);
+  return { bytes, view };
+}
+
+function zipDateTime(date = new Date()) {
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const day = date.getDate();
+  const month = date.getMonth() + 1;
+  const year = Math.max(1980, date.getFullYear()) - 1980;
+  return { time, date: (year << 9) | (month << 5) | day };
+}
+
+function buildZipBlob(files) {
+  const encoder = new TextEncoder();
+  const parts = [];
+  const centralParts = [];
+  const now = zipDateTime();
+  let offset = 0;
+
+  (files || []).forEach((file) => {
+    const nameBytes = encoder.encode(file.filename);
+    const dataBytes = encoder.encode(file.content);
+    const crc = zipCrc32(dataBytes);
+    const local = zipHeader(30);
+    local.view.setUint32(0, 0x04034b50, true);
+    local.view.setUint16(4, 20, true);
+    local.view.setUint16(6, 0x0800, true);
+    local.view.setUint16(8, 0, true);
+    local.view.setUint16(10, now.time, true);
+    local.view.setUint16(12, now.date, true);
+    local.view.setUint32(14, crc, true);
+    local.view.setUint32(18, dataBytes.length, true);
+    local.view.setUint32(22, dataBytes.length, true);
+    local.view.setUint16(26, nameBytes.length, true);
+    local.view.setUint16(28, 0, true);
+    parts.push(local.bytes, nameBytes, dataBytes);
+
+    const central = zipHeader(46);
+    central.view.setUint32(0, 0x02014b50, true);
+    central.view.setUint16(4, 20, true);
+    central.view.setUint16(6, 20, true);
+    central.view.setUint16(8, 0x0800, true);
+    central.view.setUint16(10, 0, true);
+    central.view.setUint16(12, now.time, true);
+    central.view.setUint16(14, now.date, true);
+    central.view.setUint32(16, crc, true);
+    central.view.setUint32(20, dataBytes.length, true);
+    central.view.setUint32(24, dataBytes.length, true);
+    central.view.setUint16(28, nameBytes.length, true);
+    central.view.setUint16(30, 0, true);
+    central.view.setUint16(32, 0, true);
+    central.view.setUint16(34, 0, true);
+    central.view.setUint16(36, 0, true);
+    central.view.setUint32(38, 0, true);
+    central.view.setUint32(42, offset, true);
+    centralParts.push(central.bytes, nameBytes);
+    offset += local.bytes.length + nameBytes.length + dataBytes.length;
+  });
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = zipHeader(22);
+  end.view.setUint32(0, 0x06054b50, true);
+  end.view.setUint16(8, files.length, true);
+  end.view.setUint16(10, files.length, true);
+  end.view.setUint32(12, centralSize, true);
+  end.view.setUint32(16, offset, true);
+  end.view.setUint16(20, 0, true);
+  return new Blob([...parts, ...centralParts, end.bytes], { type: "application/zip" });
+}
+
 function timestampForFilename() {
   const now = new Date();
   const pad = (value) => String(value).padStart(2, "0");
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+function monthDayForFilename() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
 }
 
 function itemSellerProductName(item) {
@@ -4030,6 +4127,7 @@ function exportAlimtalkCsv() {
   }
   const byDay = classifyAlimtalkRowsByDay(allRows);
   const timestamp = timestampForFilename();
+  const files = [];
   let fileCount = 0;
   let rowCount = 0;
   CS_DAYS.filter((day) => day.key !== "all").forEach((day) => {
@@ -4037,11 +4135,15 @@ function exportAlimtalkCsv() {
     if (!rows.length) return;
     const csvRows = alimtalkRowsForDay(day.key, rows);
     const templateKey = CS_DAY_TEMPLATE[day.key] || day.key;
-    downloadCsv(`alimtalk_${compactFilenamePart(day.label)}_${templateKey}_${timestamp}.csv`, csvRows);
+    files.push({
+      filename: `alimtalk_${compactFilenamePart(day.label)}_${templateKey}_${timestamp}.csv`,
+      content: csvRowsToText(csvRows),
+    });
     fileCount += 1;
     rowCount += rows.length;
   });
-  toast(fileCount ? `알림톡 CSV ${fileCount}개 · ${rowCount}건 다운로드` : "알림톡 CSV 대상이 없습니다.");
+  if (files.length) downloadBlob(`${monthDayForFilename()}알림톡.zip`, buildZipBlob(files));
+  toast(fileCount ? `알림톡 ZIP ${fileCount}개 파일 · ${rowCount}건 다운로드` : "알림톡 CSV 대상이 없습니다.");
 }
 
 function invoiceReceiverTel(invoice) {
