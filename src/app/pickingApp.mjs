@@ -1170,18 +1170,18 @@ function inspectionLabelNumberMap(selectedInvoice) {
   if (!selectedInvoice || !invoiceHasLabelTarget(selectedInvoice)) return new Map();
   const selectedKey = selectedInvoice.orderGroupNo || selectedInvoice.invoiceNo;
   const map = new Map();
-  const weekdaySeq = {};
+  const dayOffsetSeq = {};
   labelSourceInvoices(new Map()).forEach((invoice) => {
     (labelItemsForInvoice(invoice, new Map()) || []).forEach((item) => {
       const target = getLabelTargetResult({ privateCode: item.ownCode || "" }, null);
       const optionName = normalizeLabelOptionName(item.optionName || "");
       if (!target.ok || !optionName) return;
       const qty = Math.max(1, parseInt(String(item.quantity || 1).replace(/,/g, ""), 10) || 1);
-      const weekday = getLabelWeekday(labelReceivedAtForItem(invoice, item));
+      const dayOffset = getLabelDayOffset(labelReceivedAtForItem(invoice, item));
       const numbers = [];
       for (let index = 0; index < qty; index += 1) {
-        weekdaySeq[weekday] = (weekdaySeq[weekday] || 0) + 1;
-        numbers.push(`${weekday}${weekdaySeq[weekday]}`);
+        dayOffsetSeq[dayOffset] = (dayOffsetSeq[dayOffset] || 0) + 1;
+        numbers.push(`(${dayOffset})-${dayOffsetSeq[dayOffset]}`);
       }
       if ((invoice.orderGroupNo || invoice.invoiceNo) !== selectedKey) return;
       map.set(itemSlotKey(invoice, item), numbers.join(", "));
@@ -4317,7 +4317,6 @@ function exportToggleCsv() {
 }
 
 const LABEL_CSV_HEADER = ["라벨번호", "상품코드", "자사코드", "판매처 상품명", "판매처 옵션명", "수량", "접수일자", "수취인"];
-const LABEL_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 function createLabelExportStats() {
   return {
@@ -4389,12 +4388,19 @@ function normalizeLabelOptionName(optionName) {
   return value.trim();
 }
 
-function getLabelWeekday(receivedAt) {
-  const raw = String(receivedAt || state.selectedDate || "").trim();
-  const compact = raw.match(/^(\d{4})-?(\d{2})-?(\d{2})/);
+function labelDateValue(value) {
+  const raw = String(value || "").trim();
+  const compact = raw.match(/^(\d{4})[-./]?(\d{2})[-./]?(\d{2})/);
   const date = compact ? new Date(Number(compact[1]), Number(compact[2]) - 1, Number(compact[3])) : new Date(raw);
-  if (Number.isNaN(date.getTime())) return LABEL_WEEKDAYS[new Date().getDay()];
-  return LABEL_WEEKDAYS[date.getDay()];
+  return Number.isNaN(date.getTime()) ? null : new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function getLabelDayOffset(receivedAt) {
+  const selectedDate = labelDateValue(state.selectedDate);
+  const receivedDate = labelDateValue(receivedAt || state.selectedDate);
+  if (!selectedDate || !receivedDate) return 0;
+  const diffMs = selectedDate.getTime() - receivedDate.getTime();
+  return Math.max(0, Math.round(diffMs / 86400000));
 }
 
 function makeLabelKey(row, privateCode, optionName, unitIndex) {
@@ -4431,7 +4437,7 @@ function buildLabelCsvRows(rows, options = {}) {
   const stats = createLabelExportStats();
   const csvRows = [LABEL_CSV_HEADER];
   const xlsxMode = options.format === "xlsx";
-  const weekdaySeq = {};
+  const dayOffsetSeq = {};
   const emittedKeys = new Set();
   const printedKeys = options.printedKeys || getPrintedLabelKeys();
   const newLabelKeys = [];
@@ -4449,7 +4455,7 @@ function buildLabelCsvRows(rows, options = {}) {
     if (!expanded.length) return;
     stats.targetRows += 1;
     const productName = normalizeProductName(row.productCode, row.productName);
-    const weekday = getLabelWeekday(row.receivedAt);
+    const dayOffset = getLabelDayOffset(row.receivedAt);
     expanded.forEach((expandedRow, copyIndex) => {
       const unitIndex = copyIndex + 1;
       const labelKey = makeLabelKey(row, target.code, optionName, unitIndex);
@@ -4463,9 +4469,9 @@ function buildLabelCsvRows(rows, options = {}) {
       }
       emittedKeys.add(labelKey);
       newLabelKeys.push(labelKey);
-      weekdaySeq[weekday] = (weekdaySeq[weekday] || 0) + 1;
+      dayOffsetSeq[dayOffset] = (dayOffsetSeq[dayOffset] || 0) + 1;
       csvRows.push([
-        `${weekday}${weekdaySeq[weekday]}`,
+        `(${dayOffset})-${dayOffsetSeq[dayOffset]}`,
         xlsxMode ? String(expandedRow.productCode || "").trim() : formatCsvTextCell(expandedRow.productCode || ""),
         target.code,
         productName,
