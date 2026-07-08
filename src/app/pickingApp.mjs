@@ -4575,7 +4575,7 @@ function labelInvoiceRank(invoice, shortageRankMap) {
 
 function labelSourceInvoices(shortageRankMap = new Map()) {
   void shortageRankMap;
-  return completedInvoicesForSelectedDate().filter(invoiceHasLabelTarget);
+  return inspectionSourceInvoices().filter(invoiceHasGold).filter(invoiceHasLabelTarget);
 }
 
 function labelItemsForInvoice(invoice, shortageRankMap) {
