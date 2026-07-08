@@ -4400,6 +4400,7 @@ function getLabelWeekday(receivedAt) {
 function makeLabelKey(row, privateCode, optionName, unitIndex) {
   return [
     String(row?.invNo || row?.orderNo || "").trim(),
+    String(row?.itemNo || "").trim(),
     String(row?.productCode || "").trim(),
     String(privateCode || "").trim(),
     String(optionName || "").trim(),
@@ -4588,6 +4589,7 @@ function buildGoldLabelSourceRows(shortageRankMap = new Map()) {
     labelItemsForInvoice(invoice, shortageRankMap).map((item) => ({
       invNo: invoice.invoiceNo || "",
       orderNo: invoice.orderGroupNo || "",
+      itemNo: item.sellpiaItemNo || "",
       productCode: item.sellpiaProductCode || "",
       privateCode: item.ownCode || "",
       productName: item.productName || "",
