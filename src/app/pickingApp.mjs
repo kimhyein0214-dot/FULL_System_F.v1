@@ -3936,6 +3936,28 @@ function alimtalkOption(item) {
   return itemSellerOptionName(item) || item.optionName || "";
 }
 
+function alimtalkDelayedItemsForInvoice(invoice) {
+  return invoiceItemsInSellpiaRowOrder(invoice).filter((item) => {
+    const itemState = workflowItemState(invoice, item);
+    if (itemState?.inspected || itemState?.cancelled || itemState?.shortageRepicked) return false;
+    return itemHasOpenWorkflowShortage(invoice, item) || isHold(item);
+  });
+}
+
+function alimtalkProductLine(item) {
+  const product = alimtalkProduct(item);
+  const option = alimtalkOption(item);
+  return option ? `${product}(${option})` : product;
+}
+
+function alimtalkDebugColumns(row) {
+  const invoiceState = workflowInvoiceState(row.invoice);
+  const seller = sellerBadgeMeta(row.invoice.seller)?.label || row.invoice.seller || "";
+  const delayedItems = alimtalkDelayedItemsForInvoice(row.invoice);
+  const shortageItems = delayedItems.length ? delayedItems : row.csReason === "hold" && row.item ? [row.item] : [];
+  return [seller, dateKey(row.invoice.receiptDate), invoiceState?.inspected ? "ON" : "OFF", shortageItems.map(alimtalkProductLine).join("\n")];
+}
+
 function alimtalkBaseRow(row, item, extra = {}) {
   const invoice = row.invoice;
   const itemState = item ? workflowItemState(invoice, item) : null;
@@ -3959,11 +3981,7 @@ function buildAlimtalkRowsFromCsInvoices(csRows) {
   for (const row of csRows || []) {
     const invoice = row.invoice;
     const invoiceState = workflowInvoiceState(invoice);
-    const delayedItems = invoiceItemsInSellpiaRowOrder(invoice).filter((item) => {
-      const itemState = workflowItemState(invoice, item);
-      if (itemState?.inspected || itemState?.cancelled || itemState?.shortageRepicked) return false;
-      return itemHasOpenWorkflowShortage(invoice, item) || isHold(item);
-    });
+    const delayedItems = alimtalkDelayedItemsForInvoice(invoice);
     if (delayedItems.length) {
       delayedItems.forEach((item) => {
         const itemState = workflowItemState(invoice, item);
@@ -3994,11 +4012,12 @@ function classifyAlimtalkRowsByDay(rows) {
 }
 
 function alimtalkRowsForDay(dayKey, rows) {
-  const header = dayKey === "내일출고" ? ["전화번호", "#{NAME}"] : ["전화번호", "#{NAME}", "#{PRODUCT}", "#{OPTION}"];
+  const debugHeader = ["판매처", "접수일", "검품완료여부", "미송상품"];
+  const header = (dayKey === "내일출고" ? ["전화번호", "#{NAME}"] : ["전화번호", "#{NAME}", "#{PRODUCT}", "#{OPTION}"]).concat(debugHeader);
   const body = rows.map((row) =>
     dayKey === "내일출고"
-      ? [alimtalkPhone(row.invoice), alimtalkName(row.invoice)]
-      : [alimtalkPhone(row.invoice), alimtalkName(row.invoice), alimtalkProduct(row.item), alimtalkOption(row.item)],
+      ? [alimtalkPhone(row.invoice), alimtalkName(row.invoice), ...alimtalkDebugColumns(row)]
+      : [alimtalkPhone(row.invoice), alimtalkName(row.invoice), alimtalkProduct(row.item), alimtalkOption(row.item), ...alimtalkDebugColumns(row)],
   );
   return [header, ...body];
 }
