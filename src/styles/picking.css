@@ -2009,6 +2009,13 @@ input {
   gap: 6px;
 }
 
+.inspection-title-meta > span:first-child {
+  color: #111827;
+  font-size: 24px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
 .inspection-actions {
   display: flex;
   align-items: center;
