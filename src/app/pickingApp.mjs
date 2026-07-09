@@ -2684,19 +2684,19 @@ function renderInspectionPanels(options = {}) {
   const selectedLabelTarget = invoiceHasLabelTarget(selected);
   const labelNoByItem = selectedLabelTarget ? inspectionLabelNumberMap(selected) : new Map();
   const selectedTotalQty = invoiceTotalQuantity(selected);
-  const selectedHeaderMeta = [
-    selected.displayName || selected.csDisplayName || "-",
-    `접수 ${selected.receiptDate || "-"}`,
-  ].join(" · ");
+  const selectedName = selected.displayName || selected.csDisplayName || "-";
   const completeAction = selectedCompleted ? "inspection-reopen" : "inspection-complete";
   const completeLabel = selectedCompleted ? "완료 취소" : "완료 처리";
   els.inspectionDetail.innerHTML = `<div class="inspection-header-skeleton ${invoiceState?.hold ? "is-hold" : ""} ${selectedCompleted ? "is-completed" : ""}">
       <div class="inspection-title-block">
         <div class="inspection-title-line">
           <strong>${escapeHtml(invoicePrimaryWorkflowLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
-          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
-        <span>${escapeHtml(selectedHeaderMeta)}</span>
+        <span class="inspection-title-meta">
+          <span>${escapeHtml(selectedName)}</span>
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+          <span>접수 ${escapeHtml(selected.receiptDate || "-")}</span>
+        </span>
         <label class="inspection-drawer-box" style="flex-wrap: wrap;">
           <span>서랍번호</span>
           <textarea class="drawer-input inspection-drawer-input" data-inspection-drawer data-order-group="${escapeHtml(selected.orderGroupNo)}" rows="2" placeholder="서랍번호 / 메모">${escapeHtml(invoiceDrawerValue(selected))}</textarea>
@@ -3123,9 +3123,12 @@ function renderCsPanels() {
       <div class="inspection-title-block">
         <div class="inspection-title-line">
           <strong>${escapeHtml(invoicePrimaryWorkflowLabel(invoice, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
-          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
-        <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")} · 접수 ${escapeHtml(invoice.receiptDate || "-")} · 송장 ${escapeHtml(invoice.invoiceNo || "-")}</span>
+        <span class="inspection-title-meta">
+          <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+          <span>접수 ${escapeHtml(invoice.receiptDate || "-")} · 송장 ${escapeHtml(invoice.invoiceNo || "-")}</span>
+        </span>
         <label class="inspection-drawer-box">
           <span>관리메모</span>
           <textarea class="drawer-input inspection-drawer-input" data-cs-drawer data-order-group="${escapeHtml(invoice.orderGroupNo)}" rows="2" placeholder="서랍번호 / 메모" ${readonlyHint}>${escapeHtml(invoiceDrawerValue(invoice))}</textarea>
@@ -3242,10 +3245,13 @@ function renderCompletedPanels() {
   els.completedDetail.innerHTML = `<div class="inspection-header-skeleton is-completed">
       <div>
         <strong>${escapeHtml(invoiceSequenceWithGroupLabel(selected))}</strong>
-        <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")} · 접수 ${escapeHtml(selected.receiptDate || "-")} · 완료 ${escapeHtml(formatShortDate(completedAt))}</span>
+        <span class="inspection-title-meta">
+          <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")}</span>
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+          <span>접수 ${escapeHtml(selected.receiptDate || "-")} · 완료 ${escapeHtml(formatShortDate(completedAt))}</span>
+        </span>
       </div>
       <div class="inspection-actions">
-        ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         <button class="btn primary" data-action="inspection-reopen" data-completed-group="${escapeHtml(selected.orderGroupNo)}" type="button" ${actionDisabled}>완료 취소</button>
       </div>
     </div>
