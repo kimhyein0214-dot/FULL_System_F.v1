@@ -1681,7 +1681,7 @@ input {
 
 .workflow-row-code.seq-with-slot strong {
   color: #1f3f94;
-  font-size: 18px;
+  font-size: 0.9rem;
   font-weight: 1000;
 }
 
@@ -1742,8 +1742,9 @@ input {
 }
 
 .workflow-row-badge {
-  border-radius: 999px;
-  padding: 3px 7px;
+  border: 1px solid;
+  border-radius: 0.3rem;
+  padding: 5px;
   font-size: 11px;
   font-weight: 1000;
   white-space: nowrap;
@@ -1790,7 +1791,8 @@ input {
 
 .workflow-row-badges .seller-badge {
   font-size: 10px;
-  padding: 2px 6px;
+  border-radius: 0.3rem;
+  padding: 5px;
 }
 
 .workflow-list-toggle {
@@ -1979,7 +1981,7 @@ input {
 
 .inspection-header-skeleton span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.9rem;
   font-weight: 900;
 }
 
@@ -1996,7 +1998,7 @@ input {
 
 .inspection-title-block strong {
   color: #111827;
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -2779,10 +2781,10 @@ input {
 .invoice-badge,
 .small-badge {
   border: 1px solid #bfd1f8;
-  border-radius: 6px;
+  border-radius: 0.3rem;
   background: #eef4ff;
   color: #1f55c5;
-  padding: 3px 7px;
+  padding: 5px;
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
@@ -2790,10 +2792,10 @@ input {
 
 .seller-badge {
   border: 1px solid #b7e0c5;
-  border-radius: 6px;
+  border-radius: 0.3rem;
   background: #ecfdf3;
   color: #21794c;
-  padding: 3px 7px;
+  padding: 5px;
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
