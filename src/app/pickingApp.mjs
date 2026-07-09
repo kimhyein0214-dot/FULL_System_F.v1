@@ -2691,10 +2691,10 @@ function renderInspectionPanels(options = {}) {
       <div class="inspection-title-block">
         <div class="inspection-title-line">
           <strong>${escapeHtml(invoicePrimaryWorkflowLabel(selected, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
+          <span class="inspection-title-name">${escapeHtml(selectedName)}</span>
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
         <span class="inspection-title-meta">
-          <span>${escapeHtml(selectedName)}</span>
-          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
           <span>접수 ${escapeHtml(selected.receiptDate || "-")}</span>
         </span>
         <label class="inspection-drawer-box" style="flex-wrap: wrap;">
@@ -3123,10 +3123,10 @@ function renderCsPanels() {
       <div class="inspection-title-block">
         <div class="inspection-title-line">
           <strong>${escapeHtml(invoicePrimaryWorkflowLabel(invoice, selectedIndex >= 0 ? selectedIndex : 0))}</strong>
+          <span class="inspection-title-name">${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
+          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
         </div>
         <span class="inspection-title-meta">
-          <span>${escapeHtml(invoice.displayName || invoice.csDisplayName || "-")}</span>
-          ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
           <span>접수 ${escapeHtml(invoice.receiptDate || "-")} · 송장 ${escapeHtml(invoice.invoiceNo || "-")}</span>
         </span>
         <label class="inspection-drawer-box">
@@ -3243,11 +3243,13 @@ function renderCompletedPanels() {
   const completedAt = completedEvent?.event_at || completedEvent?.created_at || invoiceState?.lastEventAt;
   const actionDisabled = allowWorkflowEvents ? "" : "disabled";
   els.completedDetail.innerHTML = `<div class="inspection-header-skeleton is-completed">
-      <div>
-        <strong>${escapeHtml(invoiceSequenceWithGroupLabel(selected))}</strong>
-        <span class="inspection-title-meta">
-          <span>${escapeHtml(selected.displayName || selected.csDisplayName || "-")}</span>
+      <div class="inspection-title-block">
+        <div class="inspection-title-line">
+          <strong>${escapeHtml(invoiceSequenceWithGroupLabel(selected))}</strong>
+          <span class="inspection-title-name">${escapeHtml(selected.displayName || selected.csDisplayName || "-")}</span>
           ${seller ? `<span class="seller-badge ${seller.className}">${escapeHtml(seller.label)}</span>` : ""}
+        </div>
+        <span class="inspection-title-meta">
           <span>접수 ${escapeHtml(selected.receiptDate || "-")} · 완료 ${escapeHtml(formatShortDate(completedAt))}</span>
         </span>
       </div>

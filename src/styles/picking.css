@@ -1992,13 +1992,21 @@ input {
 .inspection-title-line {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   min-width: 0;
 }
 
 .inspection-title-block strong {
   color: #111827;
-  font-size: 24px;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.inspection-title-name {
+  color: #111827;
+  font-size: 1.5rem;
+  font-weight: 1000;
   line-height: 1;
 }
 
@@ -2007,13 +2015,6 @@ input {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.inspection-title-meta > span:first-child {
-  color: #111827;
-  font-size: 24px;
-  font-weight: 1000;
-  line-height: 1;
 }
 
 .inspection-actions {
