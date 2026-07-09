@@ -1140,7 +1140,7 @@ function renderInspectionTotalAmountBadge(invoice) {
   const totalAmount = getInvoiceTotalAmount(invoice);
   if (totalAmount === null) return "";
   return `<span class="invoice-badge" aria-label="총 주문금액">총금액 ${escapeHtml(formatAmount(totalAmount))}원</span>
-    ${totalAmount >= 20000 ? '<span class="workflow-row-badge warn">사은품확인!</span>' : ""}`;
+    ${totalAmount >= 20000 ? '<span class="workflow-row-badge gift">사은품확인!</span>' : ""}`;
 }
 
 function invoiceTotalQuantity(invoice) {

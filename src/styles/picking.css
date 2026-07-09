@@ -1759,6 +1759,12 @@ input {
   color: var(--amber);
 }
 
+.workflow-row-badge.gift {
+  background: #fff3c4;
+  border: 1px solid #f59e0b;
+  color: #92400e;
+}
+
 .workflow-row-badge.done {
   background: #dcfce7;
   color: #15803d;
